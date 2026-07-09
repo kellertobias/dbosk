@@ -26,8 +26,9 @@ if [[ "$mode" == "archive" && "$action" == "install" ]]; then
     CONTENTS="$APP_BUNDLE/Contents"
 
     rm -rf "$APP_BUNDLE"
-    mkdir -p "$CONTENTS/MacOS"
+    mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
     cp "$BIN_PATH" "$CONTENTS/MacOS/$APP_NAME"
+    cp "Resources/AppIcon.icns" "$CONTENTS/Resources/AppIcon.icns"
 
     cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -40,6 +41,10 @@ if [[ "$mode" == "archive" && "$action" == "install" ]]; then
     <string>$BUNDLE_ID</string>
     <key>CFBundleName</key>
     <string>$APP_NAME</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
