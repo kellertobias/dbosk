@@ -6,19 +6,38 @@ struct SessionView: View {
     @Bindable var session: ConnectionSession
 
     var body: some View {
-        NavigationSplitView {
-            SidebarView(session: session)
-                .navigationSplitViewColumnWidth(min: 180, ideal: 240)
-        } detail: {
-            QueryView(tab: session.queryTab)
+        VStack(spacing: 0) {
+            // Always-visible environment stripe (e.g. red = production).
+            if let tag = session.profile.colorTag {
+                Rectangle()
+                    .fill(tag.color)
+                    .frame(height: 3)
+            }
+            NavigationSplitView {
+                SidebarView(session: session)
+                    .navigationSplitViewColumnWidth(min: 180, ideal: 240)
+            } detail: {
+                QueryView(tab: session.queryTab)
+            }
         }
         .navigationTitle(session.profile.name)
+        .navigationSubtitle(session.profile.groupName ?? "")
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button {
                     appModel.disconnect()
                 } label: {
                     Label("Disconnect", systemImage: "xmark.circle")
+                }
+            }
+            if let tag = session.profile.colorTag {
+                ToolbarItem(placement: .status) {
+                    Label {
+                        Text(session.profile.groupName ?? session.profile.name)
+                    } icon: {
+                        Circle().fill(tag.color).frame(width: 10, height: 10)
+                    }
+                    .labelStyle(.titleAndIcon)
                 }
             }
         }

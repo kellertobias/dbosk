@@ -3,31 +3,46 @@ import DBCore
 import DBDriverPostgres
 import SwiftUI
 
+extension ColorTag {
+    var color: Color {
+        switch self {
+        case .red: return .red
+        case .orange: return .orange
+        case .yellow: return .yellow
+        case .green: return .green
+        case .blue: return .blue
+        case .purple: return .purple
+        case .gray: return .gray
+        }
+    }
+
+    var displayName: String { rawValue.capitalized }
+}
+
 struct ConnectionListView: View {
     @Environment(AppModel.self) private var appModel
     @State private var editingProfile: ConnectionProfile?
     @State private var showingNewProfile = false
 
+    /// Groups sorted by name; ungrouped connections come last.
+    private var groupedProfiles: [(group: String?, profiles: [ConnectionProfile])] {
+        let grouped = Dictionary(grouping: appModel.profiles) { $0.groupName }
+        let named = grouped
+            .filter { $0.key != nil }
+            .sorted { ($0.key ?? "") < ($1.key ?? "") }
+            .map { (group: $0.key, profiles: $0.value) }
+        let ungrouped = grouped[nil].map { [(group: String?.none, profiles: $0)] } ?? []
+        return named + ungrouped
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             List {
-                ForEach(appModel.profiles) { profile in
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(profile.name).font(.headline)
-                            Text(subtitle(for: profile))
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                ForEach(groupedProfiles, id: \.group) { section in
+                    Section(section.group ?? "Connections") {
+                        ForEach(section.profiles) { profile in
+                            row(for: profile)
                         }
-                        Spacer()
-                        Button("Connect") {
-                            Task { await appModel.connect(to: profile) }
-                        }
-                        .disabled(appModel.isConnecting)
-                    }
-                    .contextMenu {
-                        Button("Edit…") { editingProfile = profile }
-                        Button("Delete", role: .destructive) { appModel.delete(profile) }
                     }
                 }
             }
@@ -58,6 +73,29 @@ struct ConnectionListView: View {
         .frame(minWidth: 480, minHeight: 320)
     }
 
+    private func row(for profile: ConnectionProfile) -> some View {
+        HStack {
+            Circle()
+                .fill(profile.colorTag?.color ?? Color.secondary.opacity(0.25))
+                .frame(width: 10, height: 10)
+            VStack(alignment: .leading) {
+                Text(profile.name).font(.headline)
+                Text(subtitle(for: profile))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Connect") {
+                Task { await appModel.connect(to: profile) }
+            }
+            .disabled(appModel.isConnecting)
+        }
+        .contextMenu {
+            Button("Edit…") { editingProfile = profile }
+            Button("Delete", role: .destructive) { appModel.delete(profile) }
+        }
+    }
+
     private func subtitle(for profile: ConnectionProfile) -> String {
         var parts = [profile.driverID]
         if let host = profile.host {
@@ -76,6 +114,8 @@ struct ConnectionEditView: View {
 
     @State private var driverID = PostgresDriver.descriptor.id
     @State private var name = ""
+    @State private var groupName = ""
+    @State private var colorTag: ColorTag?
     @State private var host = "localhost"
     @State private var port = ""
     @State private var user = ""
@@ -104,6 +144,28 @@ struct ConnectionEditView: View {
                     }
                 }
                 TextField("Name", text: $name)
+                HStack {
+                    TextField("Group", text: $groupName, prompt: Text("Optional"))
+                    if !existingGroups.isEmpty {
+                        Menu {
+                            ForEach(existingGroups, id: \.self) { group in
+                                Button(group) { groupName = group }
+                            }
+                        } label: {
+                            Image(systemName: "chevron.down")
+                        }
+                        .menuStyle(.borderlessButton)
+                        .frame(width: 24)
+                    }
+                }
+                LabeledContent("Color") {
+                    HStack(spacing: 8) {
+                        colorSwatch(nil)
+                        ForEach(ColorTag.allCases, id: \.self) { tag in
+                            colorSwatch(tag)
+                        }
+                    }
+                }
                 TextField("Host", text: $host)
                 TextField("Port", text: $port, prompt: Text(defaultPortPrompt))
                     .frame(maxWidth: 120)
@@ -147,6 +209,34 @@ struct ConnectionEditView: View {
         .onAppear { populate() }
     }
 
+    private var existingGroups: [String] {
+        Array(Set(appModel.profiles.compactMap(\.groupName))).sorted()
+    }
+
+    private func colorSwatch(_ tag: ColorTag?) -> some View {
+        Button {
+            colorTag = tag
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(tag?.color ?? Color.secondary.opacity(0.25))
+                    .frame(width: 16, height: 16)
+                if tag == nil {
+                    Image(systemName: "slash.circle")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .overlay {
+                if colorTag == tag {
+                    Circle().strokeBorder(Color.primary, lineWidth: 2)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .help(tag?.displayName ?? "None")
+    }
+
     private var defaultPortPrompt: String {
         let port = AppModel.availableDrivers
             .first { $0.id == driverID }?.defaultPort
@@ -157,6 +247,8 @@ struct ConnectionEditView: View {
         guard let profile else { return }
         driverID = profile.driverID
         name = profile.name
+        groupName = profile.groupName ?? ""
+        colorTag = profile.colorTag
         host = profile.host ?? ""
         port = profile.port.map(String.init) ?? ""
         user = profile.user ?? ""
@@ -187,6 +279,9 @@ struct ConnectionEditView: View {
         let updated = ConnectionProfile(
             id: profile?.id ?? UUID(),
             name: name,
+            groupName: groupName.trimmingCharacters(in: .whitespaces).isEmpty
+                ? nil : groupName.trimmingCharacters(in: .whitespaces),
+            colorTag: colorTag,
             driverID: driverID,
             host: host.isEmpty ? nil : host,
             port: Int(port),
