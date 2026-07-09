@@ -1,5 +1,6 @@
 import Connections
 import DBCore
+import Export
 import DBDriverMongo
 import DBDriverMySQL
 import DBDriverPostgres
@@ -196,8 +197,16 @@ final class QueryTab {
         case cancelled
     }
 
+    enum ExportState: Equatable {
+        case idle
+        case exporting(rows: Int)
+        case done(URL)
+        case failed(String)
+    }
+
     var queryText: String = ""
     var runState: RunState = .idle
+    var exportState: ExportState = .idle
     var columns: [ColumnMeta] = []
     var rows: [ResultRow] = []
     /// Incremented whenever rows/columns change, so AppKit views know to reload.
@@ -253,6 +262,30 @@ final class QueryTab {
         let handler = cancelHandler
         runTask?.cancel()
         Task { await handler?() }
+    }
+
+    /// Re-executes the current query and streams the full result to a file,
+    /// so exports are not limited to the rows loaded in the UI.
+    func export(format: ExportFormat, to url: URL) {
+        let query = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return }
+        if case .exporting = exportState { return }
+        exportState = .exporting(rows: 0)
+        Task { [driver, pageSize] in
+            do {
+                let execution = try await driver.execute(.sql(query), pageSize: pageSize)
+                try await ResultExporter().export(
+                    execution, format: format, to: url
+                ) { progress in
+                    Task { @MainActor in
+                        self.exportState = .exporting(rows: progress.rowsWritten)
+                    }
+                }
+                self.exportState = .done(url)
+            } catch {
+                self.exportState = .failed(String(describing: error))
+            }
+        }
     }
 }
 

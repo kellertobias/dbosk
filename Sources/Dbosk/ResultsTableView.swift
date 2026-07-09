@@ -24,6 +24,19 @@ struct ResultsTableView: NSViewRepresentable {
         tableView.delegate = context.coordinator
         context.coordinator.tableView = tableView
 
+        let menu = NSMenu()
+        menu.addItem(NSMenuItem(
+            title: "Copy Cell", action: #selector(Coordinator.copyCell(_:)),
+            keyEquivalent: ""))
+        menu.addItem(NSMenuItem(
+            title: "Copy Row", action: #selector(Coordinator.copyRowTSV(_:)),
+            keyEquivalent: ""))
+        menu.addItem(NSMenuItem(
+            title: "Copy Row as JSON", action: #selector(Coordinator.copyRowJSON(_:)),
+            keyEquivalent: ""))
+        for item in menu.items { item.target = context.coordinator }
+        tableView.menu = menu
+
         let scrollView = NSScrollView()
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
@@ -75,6 +88,44 @@ struct ResultsTableView: NSViewRepresentable {
 
         func numberOfRows(in tableView: NSTableView) -> Int {
             rows.count
+        }
+
+        // MARK: Copy actions (context menu)
+
+        @objc func copyCell(_ sender: Any?) {
+            guard let tableView, tableView.clickedRow >= 0,
+                  tableView.clickedColumn >= 0,
+                  tableView.clickedRow < rows.count
+            else { return }
+            let values = rows[tableView.clickedRow].values
+            guard tableView.clickedColumn < values.count else { return }
+            setPasteboard(values[tableView.clickedColumn].displayString)
+        }
+
+        @objc func copyRowTSV(_ sender: Any?) {
+            guard let row = clickedRowValues() else { return }
+            setPasteboard(row.map(\.displayString).joined(separator: "\t"))
+        }
+
+        @objc func copyRowJSON(_ sender: Any?) {
+            guard let row = clickedRowValues() else { return }
+            var object: [String: DBValue] = [:]
+            for (index, column) in columns.enumerated() where index < row.count {
+                object[column.name] = row[index]
+            }
+            setPasteboard(DBValue.document(object).jsonString(prettyPrinted: true))
+        }
+
+        private func clickedRowValues() -> [DBValue]? {
+            guard let tableView, tableView.clickedRow >= 0,
+                  tableView.clickedRow < rows.count
+            else { return nil }
+            return rows[tableView.clickedRow].values
+        }
+
+        private func setPasteboard(_ string: String) {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(string, forType: .string)
         }
 
         func tableView(

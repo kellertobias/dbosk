@@ -1,4 +1,6 @@
+import AppKit
 import DBCore
+import Export
 import SwiftUI
 
 struct SessionView: View {
@@ -261,6 +263,7 @@ struct QueryView: View {
         }
         .toolbar {
             ToolbarItemGroup {
+                ExportMenu(tab: tab)
                 if tab.runState == .running || tab.runState == .streaming {
                     Button {
                         tab.stop()
@@ -298,10 +301,66 @@ struct QueryView: View {
                 Text("Cancelled").foregroundStyle(.orange)
             }
             Spacer()
+            ExportStatusView(tab: tab)
         }
         .font(.caption)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(.bar)
+    }
+}
+
+// MARK: - Export UI
+
+struct ExportMenu: View {
+    let tab: QueryTab
+
+    var body: some View {
+        Menu {
+            Button("Export as CSV…") { save(.csv) }
+            Button("Export as JSON…") { save(.json) }
+        } label: {
+            Label("Export", systemImage: "square.and.arrow.up")
+        }
+        .disabled(tab.queryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .help("Re-runs the query and streams the full result to a file")
+    }
+
+    private func save(_ format: Export.ExportFormat) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "results.\(format.fileExtension)"
+        panel.canCreateDirectories = true
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            tab.export(format: format, to: url)
+        }
+    }
+}
+
+struct ExportStatusView: View {
+    let tab: QueryTab
+
+    var body: some View {
+        switch tab.exportState {
+        case .idle:
+            EmptyView()
+        case .exporting(let rows):
+            HStack(spacing: 4) {
+                ProgressView().controlSize(.small)
+                Text("Exporting… \(rows) rows")
+            }
+        case .done(let url):
+            Button {
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            } label: {
+                Label("Exported \(url.lastPathComponent)", systemImage: "checkmark.circle")
+            }
+            .buttonStyle(.link)
+            .font(.caption)
+        case .failed(let message):
+            Text("Export failed: \(message)")
+                .foregroundStyle(.red)
+                .textSelection(.enabled)
+        }
     }
 }

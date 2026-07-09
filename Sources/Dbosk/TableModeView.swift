@@ -88,6 +88,7 @@ struct TableModeView: View {
                 }
                 .help("Next page")
                 Spacer()
+                ExportMenu(tab: browser.resultTab)
                 Button("Load") {
                     browser.load()
                 }
@@ -155,6 +156,7 @@ struct TableModeView: View {
                 Text("Cancelled").foregroundStyle(.orange)
             }
             Spacer()
+            ExportStatusView(tab: browser.resultTab)
         }
         .font(.caption)
         .padding(.horizontal, 8)
