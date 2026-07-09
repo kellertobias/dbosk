@@ -15,36 +15,90 @@ struct TableModeView: View {
                 description: Text("Select a table in the sidebar."))
         } else {
             VStack(spacing: 0) {
-                controls
-                Divider()
-                ResultsArea(
-                    columns: browser.resultTab.columns,
-                    rows: browser.resultTab.rows,
-                    version: browser.resultTab.resultVersion)
-                statusBar
+                if browser.displayMode == .data {
+                    controls
+                    Divider()
+                    ResultsArea(
+                        columns: browser.resultTab.columns,
+                        rows: browser.resultTab.rows,
+                        version: browser.resultTab.resultVersion)
+                    statusBar
+                } else {
+                    structureHeader
+                    Divider()
+                    TableStructureView(browser: browser)
+                }
             }
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
                     Spacer()
-                    ExportMenu(tab: browser.resultTab)
-                    if browser.resultTab.runState == .running
-                        || browser.resultTab.runState == .streaming {
-                        Button {
-                            browser.resultTab.stop()
-                        } label: {
-                            Label("Stop", systemImage: "stop.fill")
+                    modePicker
+                    if browser.displayMode == .data {
+                        ExportMenu(tab: browser.resultTab)
+                        if browser.resultTab.runState == .running
+                            || browser.resultTab.runState == .streaming {
+                            Button {
+                                browser.resultTab.stop()
+                            } label: {
+                                Label("Stop", systemImage: "stop.fill")
+                            }
+                        } else {
+                            Button {
+                                browser.load()
+                            } label: {
+                                Label("Load", systemImage: "play.fill")
+                            }
+                            .keyboardShortcut(.return, modifiers: .command)
                         }
                     } else {
                         Button {
-                            browser.load()
+                            browser.loadStructure(reload: true)
                         } label: {
-                            Label("Load", systemImage: "play.fill")
+                            Label("Refresh", systemImage: "arrow.clockwise")
                         }
-                        .keyboardShortcut(.return, modifiers: .command)
+                        .disabled(browser.isLoadingStructure)
+                        .help("Reload the table structure")
                     }
                 }
             }
         }
+    }
+
+    private var modePicker: some View {
+        Picker("Mode", selection: Binding(
+            get: { browser.displayMode },
+            set: { browser.setDisplayMode($0) }
+        )) {
+            ForEach(TableBrowser.DisplayMode.allCases, id: \.self) { mode in
+                Text(mode.rawValue).tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .help("Switch between table data and structure")
+    }
+
+    /// Structure mode keeps the same table title/note header as data mode,
+    /// without the filter and paging controls.
+    private var structureHeader: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label(browser.table?.path.joined(separator: ".") ?? "",
+                      systemImage: "tablecells")
+                    .font(.headline)
+                Spacer()
+                if browser.isLoadingStructure {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            if let session, let table = browser.table,
+               let note = session.note(for: table) {
+                Label(note, systemImage: "note.text")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(10)
     }
 
     private var controls: some View {

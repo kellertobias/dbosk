@@ -56,6 +56,21 @@ public final class MongoDriver: DatabaseDriver, Sendable {
             database: table.path[0], collection: table.path[1])
     }
 
+    public func describeTable(_ table: Namespace) async throws -> TableStructure {
+        guard table.path.count == 2 else {
+            return TableStructure(columns: [], indexes: [])
+        }
+        let fields = try await state.sampleFields(
+            database: table.path[0], collection: table.path[1])
+        let indexes = try await state.listIndexes(
+            database: table.path[0], collection: table.path[1])
+        return TableStructure(
+            columns: fields.map {
+                ColumnDetail(name: $0.name, dbTypeName: $0.dbTypeName)
+            },
+            indexes: indexes)
+    }
+
     public func execute(_ query: DriverQuery, pageSize: Int) async throws -> QueryExecution {
         let shellQuery: MongoShellQuery
         switch query {
@@ -156,6 +171,40 @@ private actor ConnectionActor {
         else { return [] }
         return sample.keys.map { key in
             ColumnMeta(name: key, dbTypeName: bsonTypeName(sample[key]))
+        }
+    }
+
+    func listIndexes(
+        database name: String, collection: String
+    ) async throws -> [IndexInfo] {
+        let database = try requireDatabase()
+        do {
+            let raw = try await database.pool[name][collection].listIndexes().drain()
+            return raw.map { index in
+                // Key spec maps field → direction/type (1, -1, "text", "2dsphere"…).
+                let columns = index.key.keys.map { field -> String in
+                    switch index.key[field] {
+                    case let direction as Int where direction < 0:
+                        return "\(field) (desc)"
+                    case let direction as Int32 where direction < 0:
+                        return "\(field) (desc)"
+                    case let kind as String:
+                        return "\(field) (\(kind))"
+                    default:
+                        return field
+                    }
+                }
+                return IndexInfo(
+                    name: index.name,
+                    columns: columns,
+                    isUnique: index.unique ?? (index.name == "_id_"),
+                    isPrimary: index.name == "_id_")
+            }
+        } catch {
+            throw DBError(
+                kind: .queryFailed,
+                message: "Could not list indexes",
+                underlying: String(reflecting: error))
         }
     }
 

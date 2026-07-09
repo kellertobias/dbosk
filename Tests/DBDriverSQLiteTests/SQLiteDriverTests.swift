@@ -124,6 +124,61 @@ import Testing
         await driver.disconnect()
     }
 
+    @Test func describesTableStructure() async throws {
+        let path = try makeDatabase()
+        let queue = try DatabaseQueue(path: path)
+        try await queue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE orders (
+                    id INTEGER PRIMARY KEY,
+                    customer TEXT NOT NULL,
+                    status TEXT DEFAULT 'open',
+                    total REAL
+                );
+                CREATE INDEX idx_orders_status ON orders(status, customer);
+                CREATE UNIQUE INDEX idx_orders_customer ON orders(customer);
+                """)
+        }
+        let driver = try makeDriver(path)
+        try await driver.connect()
+
+        let structure = try await driver.describeTable(
+            Namespace(path: ["orders"], kind: .table(.table), isExpandable: false))
+
+        #expect(structure.columns.map(\.name) == ["id", "customer", "status", "total"])
+        let id = structure.columns[0]
+        #expect(id.isPrimaryKey)
+        #expect(id.dbTypeName == "INTEGER")
+        let customer = structure.columns[1]
+        #expect(!customer.isNullable)
+        #expect(!customer.isPrimaryKey)
+        let status = structure.columns[2]
+        #expect(status.isNullable)
+        #expect(status.defaultValue == "'open'")
+
+        // Synthetic PRIMARY KEY entry first (rowid alias has no real index),
+        // then the named indexes.
+        #expect(structure.indexes.first?.isPrimary == true)
+        #expect(structure.indexes.first?.columns == ["id"])
+        let statusIndex = structure.indexes.first { $0.name == "idx_orders_status" }
+        #expect(statusIndex?.columns == ["status", "customer"])
+        #expect(statusIndex?.isUnique == false)
+        let customerIndex = structure.indexes.first { $0.name == "idx_orders_customer" }
+        #expect(customerIndex?.isUnique == true)
+        await driver.disconnect()
+    }
+
+    @Test func describesViewWithoutIndexes() async throws {
+        let driver = try makeDriver(try makeDatabase())
+        try await driver.connect()
+        let structure = try await driver.describeTable(
+            Namespace(path: ["active_people"], kind: .table(.view), isExpandable: false))
+        // Views have columns but no indexes in SQLite.
+        #expect(structure.columns.map(\.name) == ["id", "name", "score", "avatar"])
+        #expect(structure.indexes.isEmpty)
+        await driver.disconnect()
+    }
+
     @Test func errorSurfacesMessage() async throws {
         let driver = try makeDriver(try makeDatabase())
         try await driver.connect()

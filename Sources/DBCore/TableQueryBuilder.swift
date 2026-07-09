@@ -30,11 +30,25 @@ public enum TableQueryBuilder {
         let offset = max(request.offset, 0)
         let filter = request.filter.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if descriptor.queryLanguage == .mongo {
+        switch descriptor.queryLanguage {
+        case .mongo:
             var query = "db.\(request.table.path.joined(separator: ".")).find(\(filter.isEmpty ? "{}" : filter))"
             if offset > 0 { query += ".skip(\(offset))" }
             query += ".limit(\(limit))"
             return query
+        case .redis:
+            // Filter field holds a key pattern; limit caps the number of keys.
+            let pattern = filter.isEmpty ? "*" : filter
+            return "SCAN 0 MATCH \(pattern) COUNT \(limit)"
+        case .partiql:
+            // DynamoDB PartiQL has no LIMIT/OFFSET clauses; the driver pages
+            // via the API instead.
+            let target = descriptor.quoted(request.table.path.joined(separator: "."))
+            var sql = "SELECT * FROM \(target)"
+            if !filter.isEmpty { sql += " WHERE \(filter)" }
+            return sql
+        case .sql:
+            break
         }
 
         let target = request.table.path

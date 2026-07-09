@@ -208,6 +208,24 @@ struct MongoDriverIntegrationTests {
         #expect(fields.contains { $0.name == "name" && $0.dbTypeName == "string" })
         #expect(fields.contains { $0.name == "_id" && $0.dbTypeName == "objectId" })
     }
+
+    @Test func describesCollectionStructure() async throws {
+        let driver = try makeDriver()
+        try await driver.connect()
+        try await seed(driver)
+
+        let structure = try await driver.describeTable(Namespace(
+            path: ["dbosk_test", "people"],
+            kind: .table(.collection),
+            isExpandable: false))
+
+        #expect(structure.columns.contains { $0.name == "_id" })
+        // Every collection carries the default _id_ index.
+        let idIndex = structure.indexes.first { $0.name == "_id_" }
+        #expect(idIndex != nil)
+        #expect(idIndex?.columns == ["_id"])
+        #expect(idIndex?.isPrimary == true)
+    }
 }
 
 import BSON

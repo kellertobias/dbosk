@@ -1,9 +1,11 @@
 import Connections
 import DBCore
 import Export
+import DBDriverDynamoDB
 import DBDriverMongo
 import DBDriverMySQL
 import DBDriverPostgres
+import DBDriverRedis
 import DBDriverSQLite
 import Foundation
 import Observation
@@ -11,12 +13,13 @@ import Observation
 @Observable
 @MainActor
 final class AppModel {
-    /// Drivers with a working implementation; Redis, DynamoDB follow.
     static let availableDrivers: [DriverDescriptor] = [
         PostgresDriver.descriptor,
         MySQLDriver.descriptor,
         MongoDriver.descriptor,
         SQLiteDriver.descriptor,
+        RedisDriver.descriptor,
+        DynamoDBDriver.descriptor,
     ]
 
     var profiles: [ConnectionProfile] = []
@@ -160,6 +163,10 @@ final class AppModel {
             return try MongoDriver(config: config)
         case SQLiteDriver.descriptor.id:
             return try SQLiteDriver(config: config)
+        case RedisDriver.descriptor.id:
+            return try RedisDriver(config: config)
+        case DynamoDBDriver.descriptor.id:
+            return try DynamoDBDriver(config: config)
         default:
             throw DBError(
                 kind: .unsupported,
@@ -306,7 +313,9 @@ final class ConnectionSession: Identifiable {
 
     /// Opens (or re-focuses) a table tab. Clicking a table always lands in
     /// Table mode; a tab already showing that table is reused.
-    func openTable(_ namespace: Namespace) {
+    func openTable(
+        _ namespace: Namespace, mode: TableBrowser.DisplayMode = .data
+    ) {
         guard case .table = namespace.kind else { return }
         if let existing = tabs.first(where: {
             if case .table(let browser) = $0.content {
@@ -315,9 +324,13 @@ final class ConnectionSession: Identifiable {
             return false
         }) {
             selectedTabID = existing.id
+            if case .table(let browser) = existing.content {
+                browser.setDisplayMode(mode)
+            }
             return
         }
         let browser = TableBrowser(driver: driver)
+        browser.displayMode = mode
         let tab = WorkTab(title: namespace.name, content: .table(browser))
         tabs.append(tab)
         selectedTabID = tab.id
@@ -536,7 +549,13 @@ final class WorkTab: Identifiable {
 @Observable
 @MainActor
 final class TableBrowser {
+    enum DisplayMode: String, CaseIterable {
+        case data = "Data"
+        case structure = "Structure"
+    }
+
     var table: Namespace?
+    var displayMode: DisplayMode = .data
     var availableColumns: [ColumnMeta] = []
     /// Selected column names; empty = all columns.
     var selectedColumns: Set<String> = []
@@ -545,6 +564,11 @@ final class TableBrowser {
     var limit = 100
     var columnsError: String?
     var isLoadingColumns = false
+
+    /// Structure-mode state, loaded lazily on first switch to `.structure`.
+    var structure: TableStructure?
+    var structureError: String?
+    var isLoadingStructure = false
 
     /// Executes the built query; reuses the streaming runner.
     let resultTab: QueryTab
@@ -566,6 +590,9 @@ final class TableBrowser {
         whereClause = ""
         offset = 0
         columnsError = nil
+        structure = nil
+        structureError = nil
+        if displayMode == .structure { loadStructure() }
         isLoadingColumns = true
         // Kick off the first page immediately; columns load in parallel so the
         // user sees data as fast as the server can deliver it.
@@ -608,6 +635,27 @@ final class TableBrowser {
         guard let query = builtQuery else { return }
         resultTab.queryText = query
         resultTab.run()
+    }
+
+    /// Switches display mode, fetching the structure on first use.
+    func setDisplayMode(_ mode: DisplayMode) {
+        displayMode = mode
+        if mode == .structure { loadStructure() }
+    }
+
+    func loadStructure(reload: Bool = false) {
+        guard let table else { return }
+        guard reload || (structure == nil && !isLoadingStructure) else { return }
+        structureError = nil
+        isLoadingStructure = true
+        Task { [driver] in
+            do {
+                structure = try await driver.describeTable(table)
+            } catch {
+                structureError = String(describing: error)
+            }
+            isLoadingStructure = false
+        }
     }
 
     func nextPage() {

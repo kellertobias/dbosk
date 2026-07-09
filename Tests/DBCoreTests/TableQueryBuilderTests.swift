@@ -71,6 +71,31 @@ import Testing
         #expect(query == "db.dbosk_test.people.find({}).limit(100)")
     }
 
+    @Test func redisBuildsScan() {
+        let redis = DriverDescriptor(
+            id: "redis", displayName: "Redis", queryLanguage: .redis,
+            defaultPort: 6379, supportsStreaming: true,
+            supportsServerSideCancel: false, identifierQuote: "")
+        let keyspace = Namespace(path: ["db0"], kind: .table(.table), isExpandable: false)
+        #expect(TableQueryBuilder.build(.init(table: keyspace), for: redis)
+            == "SCAN 0 MATCH * COUNT 100")
+        #expect(TableQueryBuilder.build(
+            .init(table: keyspace, filter: "user:*", limit: 50), for: redis)
+            == "SCAN 0 MATCH user:* COUNT 50")
+    }
+
+    @Test func partiqlOmitsLimitOffset() {
+        let dynamo = DriverDescriptor(
+            id: "dynamodb", displayName: "DynamoDB", queryLanguage: .partiql,
+            defaultPort: nil, supportsStreaming: true,
+            supportsServerSideCancel: false)
+        let table = Namespace(path: ["people"], kind: .table(.table), isExpandable: false)
+        #expect(TableQueryBuilder.build(
+            .init(table: table, filter: "active = true", offset: 10, limit: 5),
+            for: dynamo)
+            == #"SELECT * FROM "people" WHERE active = true"#)
+    }
+
     @Test func clampsInvalidPaging() {
         let sql = TableQueryBuilder.build(
             .init(table: table, offset: -5, limit: 0), for: postgres)

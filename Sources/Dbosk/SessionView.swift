@@ -428,6 +428,7 @@ struct SidebarView: View {
         _ namespace: DBCore.Namespace, parent: DBCore.Namespace?
     ) -> some View {
         Button("Open Table") { session.openTable(namespace) }
+        Button("Show Structure") { session.openTable(namespace, mode: .structure) }
         Button("Query Table") {
             session.openQueryTab(
                 initialSQL: SidebarNode.defaultQuery(for: namespace, in: session),

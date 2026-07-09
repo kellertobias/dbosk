@@ -1,6 +1,7 @@
 import AppKit
 import Connections
 import DBCore
+import DBDriverDynamoDB
 import DBDriverPostgres
 import DBDriverSQLite
 import SwiftUI
@@ -165,6 +166,16 @@ struct ConnectionEditView: View {
                         .labelsHidden()
                         SettingsLink { Text("Manage…") }
                     }
+                }
+                if driverID == DynamoDBDriver.descriptor.id {
+                    Text("""
+                        DynamoDB: Host = AWS region (e.g. eu-central-1), \
+                        User/Password = access key id and secret (leave empty \
+                        for the default AWS credential chain). A URI from a \
+                        credential script overrides the endpoint (dynamodb-local).
+                        """)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 if isFileBased {
                     LabeledContent("File") {

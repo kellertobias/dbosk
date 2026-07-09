@@ -74,6 +74,77 @@ public final class SQLiteDriver: DatabaseDriver, Sendable {
         }
     }
 
+    public func describeTable(_ table: Namespace) async throws -> TableStructure {
+        guard let name = table.path.last else {
+            return TableStructure(columns: [], indexes: [])
+        }
+        let literal = quotedLiteral(name)
+
+        let columnRows = try await state.collect(
+            "SELECT name, type, \"notnull\", dflt_value, pk FROM pragma_table_info(\(literal))")
+        let columns: [ColumnDetail] = columnRows.compactMap { row in
+            guard case .string(let column) = row[safe: 0] else { return nil }
+            var type = "any"
+            if case .string(let typeName) = row[safe: 1], !typeName.isEmpty {
+                type = typeName
+            }
+            var notNull = false
+            if case .int(let flag) = row[safe: 2] { notNull = flag != 0 }
+            var defaultValue: String?
+            if case .string(let text) = row[safe: 3] { defaultValue = text }
+            var isPrimary = false
+            if case .int(let pk) = row[safe: 4] { isPrimary = pk > 0 }
+            return ColumnDetail(
+                name: column,
+                dbTypeName: type,
+                isNullable: !notNull,
+                defaultValue: defaultValue,
+                isPrimaryKey: isPrimary)
+        }
+
+        // origin: "c" = CREATE INDEX, "u" = UNIQUE constraint, "pk" = primary key.
+        let indexRows = try await state.collect(
+            "SELECT name, \"unique\", origin FROM pragma_index_list(\(literal))")
+        // Qualified: GRDB exports its own IndexInfo.
+        var indexes: [DBCore.IndexInfo] = []
+        for row in indexRows {
+            guard case .string(let indexName) = row[safe: 0] else { continue }
+            var unique = false
+            if case .int(let flag) = row[safe: 1] { unique = flag != 0 }
+            var origin = "c"
+            if case .string(let text) = row[safe: 2] { origin = text }
+            let columnRows = try await state.collect(
+                """
+                SELECT coalesce(name, '(expression)')
+                FROM pragma_index_info(\(quotedLiteral(indexName))) ORDER BY seqno
+                """)
+            let indexColumns: [String] = columnRows.compactMap { row in
+                guard case .string(let column) = row.first else { return nil }
+                return column
+            }
+            indexes.append(IndexInfo(
+                name: indexName,
+                columns: indexColumns,
+                isUnique: unique,
+                isPrimary: origin == "pk"))
+        }
+        indexes.sort { ($0.isPrimary ? 0 : 1, $0.name) < ($1.isPrimary ? 0 : 1, $1.name) }
+
+        // INTEGER PRIMARY KEY (rowid alias) has no pragma_index_list entry;
+        // surface it as a synthetic primary index so the UI still shows the key.
+        let primaryColumns = columns.filter(\.isPrimaryKey).map(\.name)
+        if !primaryColumns.isEmpty, !indexes.contains(where: { $0.isPrimary }) {
+            indexes.insert(
+                DBCore.IndexInfo(
+                    name: "PRIMARY KEY",
+                    columns: primaryColumns,
+                    isUnique: true,
+                    isPrimary: true),
+                at: 0)
+        }
+        return TableStructure(columns: columns, indexes: indexes)
+    }
+
     public func execute(_ query: DriverQuery, pageSize: Int) async throws -> QueryExecution {
         guard case .sql(let sql) = query else {
             throw DBError(kind: .unsupported, message: "SQLite driver only accepts SQL")
@@ -83,6 +154,12 @@ public final class SQLiteDriver: DatabaseDriver, Sendable {
 
     private func quotedLiteral(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "''") + "'"
+    }
+}
+
+extension Array where Element == DBValue {
+    subscript(safe index: Int) -> DBValue? {
+        indices.contains(index) ? self[index] : nil
     }
 }
 

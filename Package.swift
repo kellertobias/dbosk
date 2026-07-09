@@ -16,6 +16,8 @@ let package = Package(
         .package(url: "https://github.com/vapor/mysql-nio.git", from: "1.7.0"),
         .package(url: "https://github.com/orlandos-nl/MongoKitten.git", from: "7.9.0"),
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "6.29.0"),
+        .package(url: "https://github.com/swift-server/RediStack.git", from: "1.6.0"),
+        .package(url: "https://github.com/soto-project/soto.git", from: "7.0.0"),
     ],
     targets: [
         .target(name: "DBCore"),
@@ -49,13 +51,28 @@ let package = Package(
                 .product(name: "GRDB", package: "GRDB.swift"),
             ]
         ),
+        .target(
+            name: "DBDriverRedis",
+            dependencies: [
+                "DBCore",
+                .product(name: "RediStack", package: "RediStack"),
+            ]
+        ),
+        .target(
+            name: "DBDriverDynamoDB",
+            dependencies: [
+                "DBCore",
+                .product(name: "SotoDynamoDB", package: "soto"),
+            ]
+        ),
         .target(name: "Connections", dependencies: ["DBCore"]),
         .target(name: "Export", dependencies: ["DBCore"]),
         .executableTarget(
             name: "Dbosk",
             dependencies: [
                 "DBCore", "DBDriverPostgres", "DBDriverMySQL", "DBDriverMongo",
-                "DBDriverSQLite", "Connections", "Export",
+                "DBDriverSQLite", "DBDriverRedis", "DBDriverDynamoDB",
+                "Connections", "Export",
             ]
         ),
         .testTarget(name: "DBCoreTests", dependencies: ["DBCore"]),
@@ -63,6 +80,8 @@ let package = Package(
         .testTarget(name: "DBDriverMySQLTests", dependencies: ["DBDriverMySQL"]),
         .testTarget(name: "DBDriverMongoTests", dependencies: ["DBDriverMongo"]),
         .testTarget(name: "DBDriverSQLiteTests", dependencies: ["DBDriverSQLite"]),
+        .testTarget(name: "DBDriverRedisTests", dependencies: ["DBDriverRedis"]),
+        .testTarget(name: "DBDriverDynamoDBTests", dependencies: ["DBDriverDynamoDB"]),
         .testTarget(name: "ConnectionsTests", dependencies: ["Connections"]),
         .testTarget(name: "ExportTests", dependencies: ["Export"]),
     ]

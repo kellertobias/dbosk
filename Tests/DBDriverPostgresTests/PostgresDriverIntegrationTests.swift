@@ -146,4 +146,50 @@ struct PostgresDriverIntegrationTests {
         #expect(columns[0].dbTypeName == "integer")
         await driver.disconnect()
     }
+
+    @Test func describesTableStructure() async throws {
+        let driver = try makeDriver()
+        try await driver.connect()
+
+        for sql in [
+            "DROP TABLE IF EXISTS dbosk_structure",
+            """
+            CREATE TABLE dbosk_structure (
+                id serial PRIMARY KEY,
+                email text NOT NULL,
+                status text DEFAULT 'open',
+                score float8
+            )
+            """,
+            "CREATE UNIQUE INDEX idx_structure_email ON dbosk_structure(email)",
+            "CREATE INDEX idx_structure_status ON dbosk_structure(status, email)",
+        ] {
+            let setup = try await driver.execute(.sql(sql), pageSize: 10)
+            _ = try await collectAll(setup)
+        }
+
+        let structure = try await driver.describeTable(Namespace(
+            path: ["public", "dbosk_structure"],
+            kind: .table(.table),
+            isExpandable: false))
+
+        #expect(structure.columns.map(\.name) == ["id", "email", "status", "score"])
+        let id = structure.columns[0]
+        #expect(id.isPrimaryKey)
+        #expect(!id.isNullable)
+        #expect(id.defaultValue?.contains("nextval") == true)
+        #expect(!structure.columns[1].isNullable)
+        #expect(structure.columns[2].defaultValue?.contains("open") == true)
+        #expect(structure.columns[3].isNullable)
+
+        #expect(structure.indexes.first?.isPrimary == true)
+        #expect(structure.indexes.first?.columns == ["id"])
+        let email = structure.indexes.first { $0.name == "idx_structure_email" }
+        #expect(email?.isUnique == true)
+        #expect(email?.method == "btree")
+        let status = structure.indexes.first { $0.name == "idx_structure_status" }
+        #expect(status?.isUnique == false)
+        #expect(status?.columns == ["status", "email"])
+        await driver.disconnect()
+    }
 }

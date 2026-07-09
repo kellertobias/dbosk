@@ -83,6 +83,74 @@ public final class PostgresDriver: DatabaseDriver, Sendable {
         }
     }
 
+    public func describeTable(_ table: Namespace) async throws -> TableStructure {
+        guard table.path.count == 2 else {
+            return TableStructure(columns: [], indexes: [])
+        }
+        let schema = table.path[0]
+        let name = table.path[1]
+
+        let indexRows = try await state.collect(
+            """
+            SELECT i.relname,
+                   ix.indisunique,
+                   ix.indisprimary,
+                   am.amname,
+                   array_to_string(array_agg(
+                       coalesce(a.attname, '(expression)') ORDER BY k.ordinality
+                   ), '\u{1F}')
+            FROM pg_catalog.pg_index ix
+            JOIN pg_catalog.pg_class i ON i.oid = ix.indexrelid
+            JOIN pg_catalog.pg_class t ON t.oid = ix.indrelid
+            JOIN pg_catalog.pg_namespace n ON n.oid = t.relnamespace
+            JOIN pg_catalog.pg_am am ON am.oid = i.relam
+            CROSS JOIN LATERAL unnest(ix.indkey) WITH ORDINALITY AS k(attnum, ordinality)
+            LEFT JOIN pg_catalog.pg_attribute a
+                ON a.attrelid = t.oid AND a.attnum = k.attnum AND k.attnum > 0
+            WHERE n.nspname = \(schema) AND t.relname = \(name)
+            GROUP BY i.relname, ix.indisunique, ix.indisprimary, am.amname
+            ORDER BY ix.indisprimary DESC, i.relname
+            """)
+        let indexes: [IndexInfo] = indexRows.compactMap { row in
+            guard case .string(let indexName) = row[safe: 0],
+                  case .bool(let unique) = row[safe: 1],
+                  case .bool(let primary) = row[safe: 2],
+                  case .string(let method) = row[safe: 3],
+                  case .string(let columnList) = row[safe: 4]
+            else { return nil }
+            return IndexInfo(
+                name: indexName,
+                columns: columnList.components(separatedBy: "\u{1F}"),
+                isUnique: unique,
+                isPrimary: primary,
+                method: method)
+        }
+        let primaryColumns = Set(indexes.filter(\.isPrimary).flatMap(\.columns))
+
+        let columnRows = try await state.collect(
+            """
+            SELECT column_name, data_type, is_nullable, column_default
+            FROM information_schema.columns
+            WHERE table_schema = \(schema) AND table_name = \(name)
+            ORDER BY ordinal_position
+            """)
+        let columns: [ColumnDetail] = columnRows.compactMap { row in
+            guard case .string(let column) = row[safe: 0],
+                  case .string(let type) = row[safe: 1],
+                  case .string(let nullable) = row[safe: 2]
+            else { return nil }
+            var defaultValue: String?
+            if case .string(let text) = row[safe: 3] { defaultValue = text }
+            return ColumnDetail(
+                name: column,
+                dbTypeName: type,
+                isNullable: nullable == "YES",
+                defaultValue: defaultValue,
+                isPrimaryKey: primaryColumns.contains(column))
+        }
+        return TableStructure(columns: columns, indexes: indexes)
+    }
+
     public func execute(_ query: DriverQuery, pageSize: Int) async throws -> QueryExecution {
         guard case .sql(let sql) = query else {
             throw DBError(kind: .unsupported, message: "PostgreSQL driver only accepts SQL")
@@ -141,6 +209,12 @@ public final class PostgresDriver: DatabaseDriver, Sendable {
             merged.tls = .disabled
         }
         return merged
+    }
+}
+
+extension Array where Element == DBValue {
+    subscript(safe index: Int) -> DBValue? {
+        indices.contains(index) ? self[index] : nil
     }
 }
 

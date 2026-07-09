@@ -77,11 +77,91 @@ public final class MySQLDriver: DatabaseDriver, Sendable {
         }
     }
 
+    public func describeTable(_ table: Namespace) async throws -> TableStructure {
+        guard table.path.count == 2 else {
+            return TableStructure(columns: [], indexes: [])
+        }
+        let binds = [MySQLData(string: table.path[0]), MySQLData(string: table.path[1])]
+
+        let columnRows = try await state.collect(
+            """
+            SELECT column_name, column_type, is_nullable, column_default, column_key
+            FROM information_schema.columns
+            WHERE table_schema = ? AND table_name = ? ORDER BY ordinal_position
+            """,
+            binds: binds)
+        let columns: [ColumnDetail] = columnRows.compactMap { row in
+            guard case .string(let column) = row[safe: 0],
+                  case .string(let type) = row[safe: 1],
+                  case .string(let nullable) = row[safe: 2]
+            else { return nil }
+            var defaultValue: String?
+            if case .string(let text) = row[safe: 3] { defaultValue = text }
+            var isPrimary = false
+            if case .string(let key) = row[safe: 4] { isPrimary = key == "PRI" }
+            return ColumnDetail(
+                name: column,
+                dbTypeName: type,
+                isNullable: nullable == "YES",
+                defaultValue: defaultValue,
+                isPrimaryKey: isPrimary)
+        }
+
+        let indexRows = try await state.collect(
+            """
+            SELECT index_name, non_unique, index_type, column_name
+            FROM information_schema.statistics
+            WHERE table_schema = ? AND table_name = ?
+            ORDER BY index_name, seq_in_index
+            """,
+            binds: binds)
+        // One row per indexed column; fold into one IndexInfo per index name,
+        // preserving the server's index ordering.
+        var order: [String] = []
+        var grouped: [String: (unique: Bool, type: String?, columns: [String])] = [:]
+        for row in indexRows {
+            guard case .string(let indexName) = row[safe: 0] else { continue }
+            var nonUnique = true
+            switch row[safe: 1] {
+            case .int(let value): nonUnique = value != 0
+            case .string(let value): nonUnique = value != "0"
+            default: break
+            }
+            var type: String?
+            if case .string(let text) = row[safe: 2] { type = text }
+            var column = "(expression)"
+            if case .string(let name) = row[safe: 3] { column = name }
+            if grouped[indexName] == nil {
+                order.append(indexName)
+                grouped[indexName] = (unique: !nonUnique, type: type, columns: [])
+            }
+            grouped[indexName]?.columns.append(column)
+        }
+        let indexes: [IndexInfo] = order.compactMap { name in
+            guard let entry = grouped[name] else { return nil }
+            return IndexInfo(
+                name: name,
+                columns: entry.columns,
+                isUnique: entry.unique,
+                isPrimary: name == "PRIMARY",
+                method: entry.type)
+        }
+        .sorted { ($0.isPrimary ? 0 : 1, $0.name) < ($1.isPrimary ? 0 : 1, $1.name) }
+
+        return TableStructure(columns: columns, indexes: indexes)
+    }
+
     public func execute(_ query: DriverQuery, pageSize: Int) async throws -> QueryExecution {
         guard case .sql(let sql) = query else {
             throw DBError(kind: .unsupported, message: "MySQL driver only accepts SQL")
         }
         return try await state.execute(sql: sql, pageSize: pageSize)
+    }
+}
+
+extension Array where Element == DBValue {
+    subscript(safe index: Int) -> DBValue? {
+        indices.contains(index) ? self[index] : nil
     }
 }
 

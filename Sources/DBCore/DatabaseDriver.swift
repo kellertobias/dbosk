@@ -142,6 +142,70 @@ public struct ColumnMeta: Sendable, Hashable {
     }
 }
 
+// MARK: - Table structure
+
+/// Full column description for the structure view; `ColumnMeta` stays the
+/// lightweight name+type pair used by result grids and column pickers.
+public struct ColumnDetail: Sendable, Hashable, Identifiable {
+    public let name: String
+    public let dbTypeName: String
+    public let isNullable: Bool
+    public let defaultValue: String?
+    public let isPrimaryKey: Bool
+
+    public var id: String { name }
+
+    public init(
+        name: String,
+        dbTypeName: String,
+        isNullable: Bool = true,
+        defaultValue: String? = nil,
+        isPrimaryKey: Bool = false
+    ) {
+        self.name = name
+        self.dbTypeName = dbTypeName
+        self.isNullable = isNullable
+        self.defaultValue = defaultValue
+        self.isPrimaryKey = isPrimaryKey
+    }
+}
+
+public struct IndexInfo: Sendable, Hashable, Identifiable {
+    public let name: String
+    /// Indexed columns/keys in index order.
+    public let columns: [String]
+    public let isUnique: Bool
+    public let isPrimary: Bool
+    /// Index method/type when the engine reports one (btree, hash, FULLTEXT…).
+    public let method: String?
+
+    public var id: String { name }
+
+    public init(
+        name: String,
+        columns: [String],
+        isUnique: Bool,
+        isPrimary: Bool = false,
+        method: String? = nil
+    ) {
+        self.name = name
+        self.columns = columns
+        self.isUnique = isUnique
+        self.isPrimary = isPrimary
+        self.method = method
+    }
+}
+
+public struct TableStructure: Sendable, Hashable {
+    public let columns: [ColumnDetail]
+    public let indexes: [IndexInfo]
+
+    public init(columns: [ColumnDetail], indexes: [IndexInfo]) {
+        self.columns = columns
+        self.indexes = indexes
+    }
+}
+
 public struct ResultRow: Sendable, Identifiable {
     /// 0-based index within the result set.
     public let id: Int
@@ -228,8 +292,23 @@ public protocol DatabaseDriver: Sendable {
     /// Lists the columns of a table/collection without running a query.
     func listColumns(of table: Namespace) async throws -> [ColumnMeta]
 
+    /// Full structure of a table: detailed columns plus indexes.
+    /// Defaults to `listColumns` with no index information.
+    func describeTable(_ table: Namespace) async throws -> TableStructure
+
     /// Executes a query, streaming results in `pageSize`-bounded chunks.
     /// Implementations must honor Task cancellation and perform a driver-level
     /// cancel (server-side where supported) via `QueryExecution.cancel`.
     func execute(_ query: DriverQuery, pageSize: Int) async throws -> QueryExecution
+}
+
+extension DatabaseDriver {
+    public func describeTable(_ table: Namespace) async throws -> TableStructure {
+        let columns = try await listColumns(of: table)
+        return TableStructure(
+            columns: columns.map {
+                ColumnDetail(name: $0.name, dbTypeName: $0.dbTypeName)
+            },
+            indexes: [])
+    }
 }
