@@ -44,6 +44,19 @@ import Testing
         #expect(config.uri == "postgres://u:p@example.com:5433/other")
     }
 
+    @Test func keychainSourceLoadsPassword() async throws {
+        let keychain = KeychainStore()
+        let profile = ConnectionProfile(
+            name: "kc", driverID: "postgres", host: "h", user: "u",
+            credentialSource: .keychain)
+        defer { try? keychain.deletePassword(for: profile.id) }
+        try keychain.setPassword("from-keychain", for: profile.id)
+
+        let config = try await CredentialResolver().resolve(profile)
+        #expect(config.password == "from-keychain")
+        #expect(config.host == "h")
+    }
+
     @Test func noneSourceLeavesPasswordEmpty() async throws {
         let profile = ConnectionProfile(
             name: "test", driverID: "postgres", host: "h", user: "u")

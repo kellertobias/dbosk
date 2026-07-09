@@ -44,6 +44,13 @@ public final class DynamoDBDriver: DatabaseDriver, Sendable {
         return try await state.keyColumns(table: name)
     }
 
+    public func describeTable(_ table: Namespace) async throws -> TableStructure {
+        guard let name = table.path.last else {
+            return TableStructure(columns: [], indexes: [])
+        }
+        return try await state.tableStructure(table: name)
+    }
+
     public func execute(_ query: DriverQuery, pageSize: Int) async throws -> QueryExecution {
         guard case .sql(let statement) = query else {
             throw DBError(kind: .unsupported, message: "DynamoDB driver only accepts PartiQL")
@@ -132,9 +139,54 @@ private actor ClientActor {
         }
     }
 
+    /// Key schema as columns; primary key + GSIs/LSIs as "indexes".
+    func tableStructure(table: String) async throws -> TableStructure {
+        let service = try requireService()
+        let output = try await service.describeTable(
+            DynamoDB.DescribeTableInput(tableName: table))
+        guard let description = output.table else {
+            return TableStructure(columns: [], indexes: [])
+        }
+        let types = Dictionary(
+            uniqueKeysWithValues: (description.attributeDefinitions ?? []).map {
+                ($0.attributeName, $0.attributeType.rawValue)
+            })
+        func keyColumns(_ schema: [DynamoDB.KeySchemaElement]?) -> [String] {
+            (schema ?? []).map { "\($0.attributeName) (\($0.keyType.rawValue))" }
+        }
+
+        let columns = (description.keySchema ?? []).map { key in
+            ColumnDetail(
+                name: key.attributeName,
+                dbTypeName: types[key.attributeName] ?? "?",
+                isNullable: false,
+                isPrimaryKey: true)
+        }
+        var indexes = [IndexInfo(
+            name: "PRIMARY KEY",
+            columns: keyColumns(description.keySchema),
+            isUnique: true,
+            isPrimary: true)]
+        indexes += (description.globalSecondaryIndexes ?? []).map {
+            IndexInfo(
+                name: $0.indexName ?? "GSI",
+                columns: keyColumns($0.keySchema),
+                isUnique: false,
+                method: "GSI")
+        }
+        indexes += (description.localSecondaryIndexes ?? []).map {
+            IndexInfo(
+                name: $0.indexName ?? "LSI",
+                columns: keyColumns($0.keySchema),
+                isUnique: false,
+                method: "LSI")
+        }
+        return TableStructure(columns: columns, indexes: indexes)
+    }
+
     func executeStatement(_ statement: String, pageSize: Int) async -> QueryExecution {
         let (stream, continuation) = AsyncThrowingStream<QueryResultChunk, Error>
-            .makeStream(bufferingPolicy: .bufferingNewest(4))
+            .makeStream()
 
         let producer = Task {
             do {

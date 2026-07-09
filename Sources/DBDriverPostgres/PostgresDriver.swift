@@ -301,7 +301,7 @@ private actor ConnectionActor {
         }) ?? []
 
         let (stream, continuation) = AsyncThrowingStream<QueryResultChunk, Error>
-            .makeStream(bufferingPolicy: .bufferingNewest(4))
+            .makeStream()
 
         // PostgresNIO cancels the running query when the consuming task is
         // cancelled, which is our server-side cancel path.

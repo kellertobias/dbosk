@@ -100,6 +100,21 @@ struct DynamoDBDriverIntegrationTests {
         await driver.disconnect()
     }
 
+    @Test func describesTableStructure() async throws {
+        try await seed()
+        let driver = try makeDriver()
+        try await driver.connect()
+
+        let structure = try await driver.describeTable(
+            Namespace(path: ["dbosk_people"], kind: .table(.table), isExpandable: false))
+        #expect(structure.columns.map(\.name) == ["pk"])
+        #expect(structure.columns[0].isPrimaryKey)
+        #expect(structure.indexes.first?.isPrimary == true)
+        #expect(structure.indexes.first?.columns == ["pk (HASH)"])
+
+        await driver.disconnect()
+    }
+
     @Test func queryErrorSurfaces() async throws {
         let driver = try makeDriver()
         try await driver.connect()

@@ -260,7 +260,7 @@ private actor ConnectionActor {
         _ cursor: Cursor, pageSize: Int
     ) -> QueryExecution where Cursor.Element == Document {
         let (stream, continuation) = AsyncThrowingStream<QueryResultChunk, Error>
-            .makeStream(bufferingPolicy: .bufferingNewest(4))
+            .makeStream()
 
         let producer = Task {
             var buffer: [ResultRow] = []

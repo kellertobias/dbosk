@@ -67,12 +67,13 @@ let package = Package(
         ),
         .target(name: "Connections", dependencies: ["DBCore"]),
         .target(name: "Export", dependencies: ["DBCore"]),
+        .target(name: "QueryEditor", dependencies: ["DBCore"]),
         .executableTarget(
             name: "Dbosk",
             dependencies: [
                 "DBCore", "DBDriverPostgres", "DBDriverMySQL", "DBDriverMongo",
                 "DBDriverSQLite", "DBDriverRedis", "DBDriverDynamoDB",
-                "Connections", "Export",
+                "Connections", "Export", "QueryEditor",
             ]
         ),
         .testTarget(name: "DBCoreTests", dependencies: ["DBCore"]),
@@ -84,5 +85,6 @@ let package = Package(
         .testTarget(name: "DBDriverDynamoDBTests", dependencies: ["DBDriverDynamoDB"]),
         .testTarget(name: "ConnectionsTests", dependencies: ["Connections"]),
         .testTarget(name: "ExportTests", dependencies: ["Export"]),
+        .testTarget(name: "QueryEditorTests", dependencies: ["QueryEditor"]),
     ]
 )

@@ -220,7 +220,7 @@ private actor ConnectionActor {
         let queue = try requireQueue()
 
         let (stream, continuation) = AsyncThrowingStream<QueryResultChunk, Error>
-            .makeStream(bufferingPolicy: .bufferingNewest(4))
+            .makeStream()
         let columnsBox = ColumnsBox()
 
         let producer = Task {

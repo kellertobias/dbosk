@@ -205,7 +205,7 @@ private actor ConnectionActor {
         options: RedisCommandParser.ScanOptions, pageSize: Int
     ) async -> QueryExecution {
         let (stream, continuation) = AsyncThrowingStream<QueryResultChunk, Error>
-            .makeStream(bufferingPolicy: .bufferingNewest(4))
+            .makeStream()
 
         let producer = Task {
             do {
