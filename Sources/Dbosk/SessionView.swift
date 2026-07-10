@@ -162,6 +162,14 @@ struct TabBarView: View {
 // MARK: - Sidebar
 
 struct SidebarView: View {
+    /// Table pending a drop confirmation, with its sidebar parent for reload.
+    struct DropTableRequest: Identifiable {
+        let id = UUID()
+        let table: DBCore.Namespace
+        let parent: DBCore.Namespace?
+        let sql: String
+    }
+
     @Bindable var session: ConnectionSession
     @State private var noteTarget: DBCore.Namespace?
     @State private var groupTarget: DBCore.Namespace?
@@ -169,6 +177,7 @@ struct SidebarView: View {
     @State private var renameTarget: SavedQuery?
     @State private var renameText = ""
     @State private var expandedIDs: Set<String> = []
+    @State private var dropTableRequest: DropTableRequest?
 
     var body: some View {
         List {
@@ -260,6 +269,33 @@ struct SidebarView: View {
                 }
                 renameTarget = nil
             }
+        }
+        .confirmationDialog(
+            "Drop table \"\(dropTableRequest?.table.name ?? "")\"?",
+            isPresented: Binding(
+                get: { dropTableRequest != nil },
+                set: { if !$0 { dropTableRequest = nil } })
+        ) {
+            Button("Drop Table", role: .destructive) {
+                guard let request = dropTableRequest else { return }
+                dropTableRequest = nil
+                Task {
+                    do {
+                        try await session.runDDL(request.sql)
+                        session.closeTabs(showing: request.table)
+                        if let parent = request.parent {
+                            await session.reloadChildren(of: parent)
+                        } else {
+                            await session.loadRoot()
+                        }
+                    } catch {
+                        session.sidebarError = String(describing: error)
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) { dropTableRequest = nil }
+        } message: {
+            Text("\(dropTableRequest?.sql ?? "")\n\nThis permanently deletes the table and its data.")
         }
     }
 
@@ -463,6 +499,15 @@ struct SidebarView: View {
         Button("Choose Visible Tables…") { session.editingVisibility = true }
         if let parent {
             Button("Show All Tables") { session.unhideAll(in: parent) }
+        }
+        if session.descriptor.supportsDDL, namespace.kind == .table(.table) {
+            Divider()
+            Button("Drop Table…", role: .destructive) {
+                dropTableRequest = DropTableRequest(
+                    table: namespace,
+                    parent: parent,
+                    sql: DDLStatementBuilder.dropTable(namespace, for: session.descriptor))
+            }
         }
     }
 }

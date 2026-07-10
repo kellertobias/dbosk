@@ -418,6 +418,26 @@ final class ConnectionSession: Identifiable {
             sidebarError = String(describing: error)
         }
     }
+
+    /// Re-lists a parent's children, e.g. after CREATE/DROP TABLE.
+    func reloadChildren(of namespace: Namespace) async {
+        children[namespace.id] = nil
+        await loadChildren(of: namespace)
+    }
+
+    func runDDL(_ statement: String) async throws {
+        _ = try await driver.executeBatch([statement])
+    }
+
+    /// Closes any table tab showing `namespace` (after a drop).
+    func closeTabs(showing namespace: Namespace) {
+        for tab in tabs {
+            if case .table(let browser) = tab.content,
+               browser.table?.path == namespace.path {
+                close(tab)
+            }
+        }
+    }
 }
 
 // MARK: - Query tab
@@ -861,6 +881,29 @@ final class TableBrowser {
                 into: table, columns: names, values: values, for: descriptor))
         }
         return statements
+    }
+
+    func runDDL(_ statement: String) async throws {
+        _ = try await driver.executeBatch([statement])
+    }
+
+    /// Refresh after column-level DDL: projection and staged edits reference
+    /// column indexes that may have shifted, so both reset.
+    func refreshAfterSchemaChange() {
+        discardChanges()
+        selectedColumns = []
+        loadStructure(reload: true)
+        guard let table else { return }
+        isLoadingColumns = true
+        Task { [driver] in
+            do {
+                availableColumns = try await driver.listColumns(of: table)
+            } catch {
+                columnsError = String(describing: error)
+            }
+            isLoadingColumns = false
+        }
+        if displayMode == .data { load() }
     }
 
     /// Executes previewed statements atomically; on success clears the staged
