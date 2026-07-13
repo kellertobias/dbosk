@@ -585,6 +585,44 @@ final class ConnectionSession: Identifiable {
         browser.select(namespace)
     }
 
+    // MARK: Active namespace
+
+    /// The schema/database unqualified SQL names currently resolve against,
+    /// when the user switched it; nil means the connection default. Session
+    /// (connection) scoped — all query tabs share the one connection.
+    var activeNamespace: String?
+    var activeNamespaceError: String?
+
+    /// Root namespaces the picker can offer (schemas for Postgres, databases
+    /// for MySQL — exactly what the sidebar root lists for those drivers).
+    var switchableNamespaces: [String] {
+        guard let kind = descriptor.activeNamespaceKind else { return [] }
+        let expected: Namespace.Kind = kind == .schema ? .schema : .database
+        return rootNamespaces.filter { $0.kind == expected }.map(\.name)
+    }
+
+    /// Runs SET search_path / USE on the shared connection; reverts nothing
+    /// on failure (the connection state is unchanged when the statement
+    /// errors) and surfaces the message next to the picker. Nil means "back
+    /// to the connection default" — for MySQL that re-USEs the profile's
+    /// database, since there is no reset statement.
+    func setActiveNamespace(_ name: String?) async {
+        activeNamespaceError = nil
+        do {
+            if name == nil, descriptor.activeNamespaceKind == .database {
+                guard let database = profile.database, !database.isEmpty else {
+                    return  // nothing to reset to; the picker disables this
+                }
+                try await driver.setActiveNamespace(database)
+            } else {
+                try await driver.setActiveNamespace(name)
+            }
+            activeNamespace = name
+        } catch {
+            activeNamespaceError = String(describing: error)
+        }
+    }
+
     /// Opens a new raw-query tab, optionally prefilled and executed.
     func openQueryTab(
         initialSQL: String = "",

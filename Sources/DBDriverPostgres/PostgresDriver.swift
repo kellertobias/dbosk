@@ -15,7 +15,9 @@ public final class PostgresDriver: DatabaseDriver, Sendable {
         sqlDialect: .postgres,
         supportsTableEditing: true,
         supportsDDL: true,
-        explainSupport: .planAndAnalyze
+        explainSupport: .planAndAnalyze,
+        // Databases need a reconnect; schemas switch via SET search_path.
+        activeNamespaceKind: .schema
     )
 
     private let config: ResolvedConnectionConfig

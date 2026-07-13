@@ -19,7 +19,8 @@ public final class MySQLDriver: DatabaseDriver, Sendable {
         supportsTableEditing: true,
         supportsDDL: true,
         // ANALYZE deferred: MySQL emits TREE-format text until 8.3.
-        explainSupport: .plan
+        explainSupport: .plan,
+        activeNamespaceKind: .database
     )
 
     private let state: ConnectionActor
@@ -162,6 +163,19 @@ public final class MySQLDriver: DatabaseDriver, Sendable {
         }
         return try await state.execute(sql: sql, pageSize: pageSize)
     }
+
+    /// Overrides the DBCore default: `USE` is rejected by the prepared-
+    /// statement protocol the normal execute path speaks, so it runs over
+    /// the text protocol, and the actor remembers it across reconnects.
+    public func setActiveNamespace(_ name: String?) async throws {
+        guard let name else {
+            throw DBError(
+                kind: .unsupported,
+                message: "MySQL has no default-database reset; switch to a "
+                    + "specific database instead")
+        }
+        try await state.setActiveDatabase(name)
+    }
 }
 
 extension Array where Element == DBValue {
@@ -181,6 +195,8 @@ private actor ConnectionActor {
     /// In-flight streaming query, tracked so cancellation can wait for the
     /// command to fully unwind before the connection is touched again.
     private var currentQuery: EventLoopFuture<Void>?
+    /// Database switched to via USE, reapplied after transparent reconnects.
+    private var activeDatabase: String?
 
     init(config: ResolvedConnectionConfig) {
         self.config = config
@@ -196,6 +212,10 @@ private actor ConnectionActor {
                 row.columnDefinitions.first.flatMap {
                     row.column($0.name)?.int
                 }
+            }
+            if let activeDatabase {
+                _ = try await conn.simpleQuery(
+                    Self.useStatement(for: activeDatabase)).get()
             }
         } catch let error as DBError {
             throw error
@@ -278,6 +298,29 @@ private actor ConnectionActor {
         currentQuery = nil
         try? await connection?.close().get()
         connection = nil
+    }
+
+    /// Switches the connection's default database. Runs over the text
+    /// protocol (`USE` is rejected by the prepared-statement protocol that
+    /// `query` speaks) and is remembered so transparent reconnects (e.g.
+    /// after KILL QUERY) restore it instead of silently reverting to the
+    /// configured database.
+    func setActiveDatabase(_ name: String) async throws {
+        let connection = try await requireConnection()
+        do {
+            _ = try await connection.simpleQuery(Self.useStatement(for: name)).get()
+            activeDatabase = name
+        } catch {
+            throw DBError(
+                kind: .queryFailed,
+                message: Self.friendlyMessage(for: error),
+                underlying: String(reflecting: error))
+        }
+    }
+
+    private static func useStatement(for name: String) -> String {
+        ActiveNamespaceStatementBuilder.statement(activating: name, dialect: .mysql)
+            ?? "USE `\(name)`"
     }
 
     func collect(_ sql: String, binds: [MySQLData]) async throws -> [[DBValue]] {

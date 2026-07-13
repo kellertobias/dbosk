@@ -772,6 +772,81 @@ struct ResultsViewModePicker: View {
     }
 }
 
+/// Menu in the query status row that points unqualified SQL names at a
+/// schema (Postgres `SET search_path`) or database (MySQL `USE`) for the
+/// whole session. Only rendered when the driver advertises the capability.
+struct ActiveNamespacePicker: View {
+    @Bindable var session: ConnectionSession
+
+    private var kind: DriverDescriptor.ActiveNamespaceKind? {
+        session.descriptor.activeNamespaceKind
+    }
+
+    /// The connection default a reset returns to: MySQL falls back to the
+    /// profile's database (there is no "un-USE"), Postgres to the default
+    /// search path.
+    private var defaultTitle: String {
+        if kind == .database, let database = session.profile.database,
+           !database.isEmpty {
+            return "Default (\(database))"
+        }
+        return "Default"
+    }
+
+    var body: some View {
+        Menu {
+            Button {
+                Task { await session.setActiveNamespace(nil) }
+            } label: {
+                if session.activeNamespace == nil {
+                    Label(defaultTitle, systemImage: "checkmark")
+                } else {
+                    Text(defaultTitle)
+                }
+            }
+            .disabled(kind == .database && !hasResetTarget)
+            Divider()
+            ForEach(session.switchableNamespaces, id: \.self) { name in
+                Button {
+                    Task { await session.setActiveNamespace(name) }
+                } label: {
+                    if session.activeNamespace == name {
+                        Label(name, systemImage: "checkmark")
+                    } else {
+                        Text(name)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                if session.activeNamespaceError != nil {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
+                Text("\(kind?.displayName ?? ""): \(session.activeNamespace ?? "default")")
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help(helpText)
+    }
+
+    /// MySQL can only "reset" by re-USEing the profile's database; without
+    /// one the Default item is disabled.
+    private var hasResetTarget: Bool {
+        !(session.profile.database ?? "").isEmpty
+    }
+
+    private var helpText: String {
+        if let error = session.activeNamespaceError {
+            return "Could not switch: \(error)"
+        }
+        let noun = kind?.displayName.lowercased() ?? "namespace"
+        return "The \(noun) unqualified names in SQL queries resolve against "
+            + "(applies to the whole connection)"
+    }
+}
+
 /// Renders a result set in the given mode. Tabular rows are wrapped as one
 /// document per row for the tree/JSON modes; the mode toggle itself lives in
 /// the enclosing view's status row (`ResultsViewModePicker`).
@@ -980,6 +1055,9 @@ struct QueryView: View {
             }
             Spacer()
             ExportStatusView(tab: tab)
+            if session.descriptor.activeNamespaceKind != nil {
+                ActiveNamespacePicker(session: session)
+            }
             ResultsViewModePicker(selection: $viewMode, columns: tab.columns)
         }
         .font(.caption)

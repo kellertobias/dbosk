@@ -216,6 +216,42 @@ struct MySQLDriverIntegrationTests {
         await driver.disconnect()
     }
 
+    @Test func activeDatabaseRedirectsUnqualifiedNames() async throws {
+        let driver = try makeDriver()
+        try await driver.connect()
+        // No `defer` with await: disconnect must still run when a step
+        // throws, or the connection deinit assertion kills the test host.
+        do {
+            for statement in [
+                "DROP DATABASE IF EXISTS active_probe",
+                "CREATE DATABASE active_probe",
+                "CREATE TABLE active_probe.marker (n INT)",
+                "INSERT INTO active_probe.marker VALUES (7)",
+            ] {
+                _ = try await collectAll(
+                    try await driver.execute(.sql(statement), pageSize: 10))
+            }
+
+            try await driver.setActiveNamespace("active_probe")
+            let rows = try await collectAll(try await driver.execute(
+                .sql("SELECT n FROM marker"), pageSize: 10))
+            #expect(rows.first?.values.first == .int(7))
+
+            // Switch back to the connection's database: name stops resolving.
+            try await driver.setActiveNamespace("dbosk_test")
+            await #expect(throws: DBError.self) {
+                _ = try await self.collectAll(try await driver.execute(
+                    .sql("SELECT n FROM marker"), pageSize: 10))
+            }
+
+            _ = try await collectAll(try await driver.execute(
+                .sql("DROP DATABASE active_probe"), pageSize: 10))
+        } catch {
+            Issue.record("active database switch failed: \(error)")
+        }
+        await driver.disconnect()
+    }
+
     @Test func explainProducesPlanTree() async throws {
         let driver = try makeDriver()
         try await driver.connect()

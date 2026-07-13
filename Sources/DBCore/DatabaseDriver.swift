@@ -12,6 +12,21 @@ public struct DriverDescriptor: Sendable {
         case none, plan, planAndAnalyze
     }
 
+    /// What kind of namespace unqualified SQL names resolve against, for
+    /// engines where the session can switch it (Postgres `SET search_path`,
+    /// MySQL `USE`). Nil when the engine has no such notion (SQLite) or the
+    /// query language isn't SQL.
+    public enum ActiveNamespaceKind: Sendable, Equatable {
+        case database, schema
+
+        public var displayName: String {
+            switch self {
+            case .database: return "Database"
+            case .schema: return "Schema"
+            }
+        }
+    }
+
     public let id: String
     public let displayName: String
     public let queryLanguage: QueryLanguage
@@ -30,6 +45,8 @@ public struct DriverDescriptor: Sendable {
     public let supportsDDL: Bool
     /// Query-plan inspection ("Explain" in the query toolbar).
     public let explainSupport: ExplainSupport
+    /// Session-switchable target for unqualified SQL names, when supported.
+    public let activeNamespaceKind: ActiveNamespaceKind?
 
     public init(
         id: String,
@@ -42,7 +59,8 @@ public struct DriverDescriptor: Sendable {
         sqlDialect: SQLDialect? = nil,
         supportsTableEditing: Bool = false,
         supportsDDL: Bool = false,
-        explainSupport: ExplainSupport = .none
+        explainSupport: ExplainSupport = .none,
+        activeNamespaceKind: ActiveNamespaceKind? = nil
     ) {
         self.id = id
         self.displayName = displayName
@@ -55,6 +73,7 @@ public struct DriverDescriptor: Sendable {
         self.supportsTableEditing = supportsTableEditing
         self.supportsDDL = supportsDDL
         self.explainSupport = explainSupport
+        self.activeNamespaceKind = activeNamespaceKind
     }
 
     /// Quotes an identifier for this driver's SQL dialect.
@@ -386,6 +405,12 @@ public protocol DatabaseDriver: Sendable {
     /// dialect's EXPLAIN statement through `execute`; MongoDB overrides with
     /// the `explain` database command.
     func explain(_ query: DriverQuery, analyze: Bool) async throws -> ExplainPlan
+
+    /// Points unqualified SQL names at `name` for the rest of the session
+    /// (`SET search_path` / `USE`); nil restores the connection default.
+    /// Only meaningful when the descriptor advertises `activeNamespaceKind`.
+    /// Defaults to running the dialect statement through `execute`.
+    func setActiveNamespace(_ name: String?) async throws
 }
 
 extension DatabaseDriver {

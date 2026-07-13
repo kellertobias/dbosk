@@ -208,6 +208,36 @@ struct PostgresDriverIntegrationTests {
         await driver.disconnect()
     }
 
+    @Test func activeSchemaRedirectsUnqualifiedNames() async throws {
+        let driver = try makeDriver()
+        try await driver.connect()
+        for statement in [
+            "DROP SCHEMA IF EXISTS active_probe CASCADE",
+            "CREATE SCHEMA active_probe",
+            "CREATE TABLE active_probe.marker (n INT)",
+            "INSERT INTO active_probe.marker VALUES (7)",
+        ] {
+            _ = try await collectAll(
+                try await driver.execute(.sql(statement), pageSize: 10))
+        }
+
+        try await driver.setActiveNamespace("active_probe")
+        let rows = try await collectAll(try await driver.execute(
+            .sql("SELECT n FROM marker"), pageSize: 10))
+        #expect(rows.first?.values.first == .int(7))
+
+        // Reset: unqualified name no longer resolves.
+        try await driver.setActiveNamespace(nil)
+        await #expect(throws: DBError.self) {
+            _ = try await self.collectAll(try await driver.execute(
+                .sql("SELECT n FROM marker"), pageSize: 10))
+        }
+
+        _ = try await collectAll(try await driver.execute(
+            .sql("DROP SCHEMA active_probe CASCADE"), pageSize: 10))
+        await driver.disconnect()
+    }
+
     @Test func explainAnalyzeReportsActuals() async throws {
         let driver = try makeDriver()
         try await driver.connect()
