@@ -4,6 +4,42 @@ import Testing
 
 @testable import DBDriverMetabase
 
+// MARK: - Browse SQL (per-engine quoting)
+
+@Suite struct MetabaseBrowseSQLTests {
+    private func req(_ path: [String], columns: [String] = [], filter: String? = nil)
+        -> TableBrowseRequest
+    {
+        TableBrowseRequest(path: path, columns: columns, filter: filter, limit: 100, offset: 0)
+    }
+
+    @Test func mysqlUsesBackticks() {
+        let sql = MetabaseDriver.browseSQL(req(["db", "course_v2"]), engine: "mysql")
+        #expect(sql == "SELECT * FROM `course_v2` LIMIT 100 OFFSET 0")
+    }
+
+    @Test func postgresUsesDoubleQuotesAndSchema() {
+        let sql = MetabaseDriver.browseSQL(req(["db", "public", "users"]), engine: "postgres")
+        #expect(sql == "SELECT * FROM \"public\".\"users\" LIMIT 100 OFFSET 0")
+    }
+
+    @Test func unknownEngineFallsBackToDoubleQuotes() {
+        let sql = MetabaseDriver.browseSQL(req(["db", "t"]), engine: nil)
+        #expect(sql == "SELECT * FROM \"t\" LIMIT 100 OFFSET 0")
+    }
+
+    @Test func projectsAndFiltersSelectedColumns() {
+        let sql = MetabaseDriver.browseSQL(
+            req(["db", "t"], columns: ["a", "b"], filter: "a > 1"), engine: "mysql")
+        #expect(sql == "SELECT `a`, `b` FROM `t` WHERE a > 1 LIMIT 100 OFFSET 0")
+    }
+
+    @Test func escapesIdentifierQuotes() {
+        let sql = MetabaseDriver.browseSQL(req(["db", "we`ird"]), engine: "mysql")
+        #expect(sql == "SELECT * FROM `we``ird` LIMIT 100 OFFSET 0")
+    }
+}
+
 // MARK: - Mock transport
 
 /// Canned-response transport keyed by "METHOD /path"; records every request

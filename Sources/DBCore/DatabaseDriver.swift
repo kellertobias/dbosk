@@ -60,6 +60,11 @@ public struct DriverDescriptor: Sendable {
     /// the user explicitly picks what to show (drivers that expose an
     /// unbounded, org-wide set of databases).
     public let rootNamespacesDefaultHidden: Bool
+    /// Whether the app should hand table browsing to the driver as a
+    /// `.tableBrowse` query instead of generating `SELECT …` itself. True for
+    /// drivers whose databases span multiple SQL dialects (Metabase), where
+    /// only the driver knows the target engine's quoting and paging syntax.
+    public let buildsTableBrowseInDriver: Bool
 
     public init(
         id: String,
@@ -76,7 +81,8 @@ public struct DriverDescriptor: Sendable {
         activeNamespaceKind: ActiveNamespaceKind? = nil,
         supportsSSHTunnel: Bool = true,
         supportsDatabaseQualifiedSQL: Bool = true,
-        rootNamespacesDefaultHidden: Bool = false
+        rootNamespacesDefaultHidden: Bool = false,
+        buildsTableBrowseInDriver: Bool = false
     ) {
         self.id = id
         self.displayName = displayName
@@ -93,6 +99,7 @@ public struct DriverDescriptor: Sendable {
         self.supportsSSHTunnel = supportsSSHTunnel
         self.supportsDatabaseQualifiedSQL = supportsDatabaseQualifiedSQL
         self.rootNamespacesDefaultHidden = rootNamespacesDefaultHidden
+        self.buildsTableBrowseInDriver = buildsTableBrowseInDriver
     }
 
     /// Quotes an identifier for this driver's SQL dialect.
@@ -204,6 +211,34 @@ public enum DriverQuery: Sendable {
     case sql(String)
     /// v1 Mongo model: collection + operation + JSON filter/pipeline document.
     case mongo(collection: String, operation: MongoOperation, body: String)
+    /// Structured "browse one table" request. Drivers that advertise
+    /// `buildsTableBrowseInDriver` receive this instead of generated SQL, so a
+    /// driver spanning heterogeneous engines (Metabase) can emit SQL in the
+    /// dialect of the table's own database rather than a single fixed dialect.
+    case tableBrowse(TableBrowseRequest)
+}
+
+/// A read-only page over one table, addressed by its sidebar namespace path.
+public struct TableBrowseRequest: Sendable {
+    /// Namespace path of the table, e.g. ["db", "schema", "users"].
+    public let path: [String]
+    /// Columns to project, in table order; empty means all columns.
+    public let columns: [String]
+    /// Optional raw WHERE predicate typed by the user, sans the `WHERE` keyword.
+    public let filter: String?
+    public let limit: Int
+    public let offset: Int
+
+    public init(
+        path: [String], columns: [String] = [],
+        filter: String? = nil, limit: Int, offset: Int
+    ) {
+        self.path = path
+        self.columns = columns
+        self.filter = filter
+        self.limit = limit
+        self.offset = offset
+    }
 }
 
 public enum MongoOperation: String, Sendable, CaseIterable {

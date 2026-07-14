@@ -452,6 +452,14 @@ final class ConnectionSession: Identifiable {
         }
         nodes += groups.sorted().map { .group($0, parent: namespace) }
         nodes += ungrouped.map { .namespace($0, parent: namespace) }
+        // An expanded parent that loaded no visible children gets a quiet
+        // placeholder so the user sees "there is nothing here" rather than a
+        // silently empty disclosure.
+        if nodes.isEmpty {
+            let message = descriptor.rootNamespacesDefaultHidden
+                ? "No tables you have access to" : "No tables"
+            nodes = [.emptyMessage(message, parent: namespace)]
+        }
         sidebarNodeCache[namespace.id] = nodes
         return nodes
     }
@@ -554,6 +562,10 @@ final class ConnectionSession: Identifiable {
                     editing: editing,
                     checkState: editing
                         ? groupCheckState(name: name, parent: parent) : nil)
+            case .emptyMessage:
+                row = SidebarRow(
+                    kind: kind, depth: depth, isHidden: false, note: nil,
+                    editing: editing, checkState: nil)
             }
             rows.append(row)
             guard row.isExpandable, expanded.contains(row.id) else { return }
@@ -563,6 +575,8 @@ final class ConnectionSession: Identifiable {
                 childKinds = sidebarChildren(of: namespace) ?? []
             case .group(let name, let parent):
                 childKinds = sidebarGroupChildren(group: name, in: parent)
+            case .emptyMessage:
+                childKinds = []
             }
             for child in childKinds { append(child, depth: depth + 1) }
         }
@@ -820,6 +834,10 @@ final class QueryTab {
     /// session hooks this to record history.
     var onExecuted: ((String, Bool) -> Void)?
 
+    /// When set, `run()` executes this structured query instead of `queryText`.
+    /// Table mode uses it for drivers that generate their own browse SQL.
+    var browseRequest: DriverQuery?
+
     /// True when linked to a saved query whose text differs from the editor.
     var hasUnsavedChanges: Bool {
         guard let savedQuery else { return false }
@@ -829,7 +847,16 @@ final class QueryTab {
     func run() {
         guard runState != .running, runState != .streaming else { return }
         let sql = queryText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !sql.isEmpty else { return }
+        // A browse request (set by Table mode for drivers that build their own
+        // browse SQL) runs instead of the editor text; `queryText` stays as the
+        // human-readable preview shown in history.
+        let query: DriverQuery
+        if let browseRequest {
+            query = browseRequest
+        } else {
+            guard !sql.isEmpty else { return }
+            query = .sql(sql)
+        }
 
         runState = .running
         dismissExplain()
@@ -840,7 +867,7 @@ final class QueryTab {
 
         runTask = Task { [driver, pageSize] in
             do {
-                let execution = try await driver.execute(.sql(sql), pageSize: pageSize)
+                let execution = try await driver.execute(query, pageSize: pageSize)
                 self.cancelHandler = execution.cancel
                 self.columns = execution.columns
                 self.runState = .streaming
@@ -1090,6 +1117,21 @@ final class TableBrowser {
     func load() {
         guard let table, let query = builtQuery else { return }
         resultTab.queryText = query
+        // When the driver builds its own browse SQL (heterogeneous engines
+        // behind one connection), hand it the structured request; the query
+        // string above is only the preview shown in history.
+        if descriptor.buildsTableBrowseInDriver {
+            let columns = selectedColumns.isEmpty
+                ? []
+                : availableColumns.map(\.name).filter { selectedColumns.contains($0) }
+            let filter = whereClause.trimmingCharacters(in: .whitespacesAndNewlines)
+            resultTab.browseRequest = .tableBrowse(TableBrowseRequest(
+                path: table.path, columns: columns,
+                filter: filter.isEmpty ? nil : filter,
+                limit: limit, offset: offset))
+        } else {
+            resultTab.browseRequest = nil
+        }
         if let prepareForQuery {
             Task {
                 await prepareForQuery(table)

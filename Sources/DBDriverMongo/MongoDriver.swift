@@ -82,6 +82,10 @@ public final class MongoDriver: DatabaseDriver, Sendable {
         case .mongo(let collection, let operation, let body):
             shellQuery = MongoShellQuery(
                 collection: collection, operation: operation, body: body)
+        case .tableBrowse:
+            throw DBError(
+                kind: .unsupported,
+                message: "MongoDB does not support structured table browsing")
         }
         return try await state.execute(shellQuery, pageSize: pageSize)
     }
@@ -94,6 +98,10 @@ public final class MongoDriver: DatabaseDriver, Sendable {
         case .mongo(let collection, let operation, let body):
             shellQuery = MongoShellQuery(
                 collection: collection, operation: operation, body: body)
+        case .tableBrowse:
+            throw DBError(
+                kind: .unsupported,
+                message: "MongoDB does not support structured table browsing")
         }
         let reply = try await state.explain(shellQuery, analyze: analyze)
         return try ExplainPlanParser.parseMongo(reply: reply, isAnalyze: analyze)

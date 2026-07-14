@@ -406,6 +406,18 @@ private struct SidebarOutlineRow: View, @MainActor Equatable {
             groupRow(name: name, parent: parent)
         case .namespace(let namespace, let parent):
             namespaceRow(namespace, parent: parent)
+        case .emptyMessage(let text, _):
+            emptyRow(text)
+        }
+    }
+
+    private func emptyRow(_ text: String) -> some View {
+        HStack(spacing: 4) {
+            indentAndChevron
+            Text(text)
+                .font(.callout)
+                .italic()
+                .foregroundStyle(.tertiary)
         }
     }
 
@@ -625,6 +637,8 @@ enum SidebarNode {
     enum Kind: Equatable {
         case namespace(DBCore.Namespace, parent: DBCore.Namespace?)
         case group(String, parent: DBCore.Namespace)
+        /// A non-interactive "nothing here" row under an expanded, empty parent.
+        case emptyMessage(String, parent: DBCore.Namespace)
     }
 
     static func icon(for namespace: DBCore.Namespace) -> String {
@@ -675,6 +689,7 @@ struct SidebarRow: Identifiable, Equatable {
         switch kind {
         case .namespace(let namespace, _): return namespace.id
         case .group(let name, let parent): return parent.id + "#group:" + name
+        case .emptyMessage(_, let parent): return parent.id + "#empty"
         }
     }
 
@@ -682,6 +697,7 @@ struct SidebarRow: Identifiable, Equatable {
         switch kind {
         case .group: return true
         case .namespace(let namespace, _): return namespace.isExpandable
+        case .emptyMessage: return false
         }
     }
 }

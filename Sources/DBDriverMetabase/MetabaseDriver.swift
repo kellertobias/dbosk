@@ -31,7 +31,8 @@ public actor MetabaseDriver: DatabaseDriver {
         activeNamespaceKind: .database,
         supportsSSHTunnel: false,
         supportsDatabaseQualifiedSQL: false,
-        rootNamespacesDefaultHidden: true
+        rootNamespacesDefaultHidden: true,
+        buildsTableBrowseInDriver: true
     )
 
     /// Qualified table lookup key; schema-less tables key on an empty schema.
@@ -70,10 +71,17 @@ public actor MetabaseDriver: DatabaseDriver {
     private let config: ResolvedConnectionConfig
     private let client: any MetabaseHTTPClient
 
-    /// Sidebar display name and Metabase database id, sorted by name. Names
-    /// are usually unique; duplicates get an " (id)" suffix so every node
-    /// stays addressable.
-    private var databaseEntries: [(displayName: String, id: Int)] = []
+    /// One Metabase database as the sidebar sees it. `engine` selects the SQL
+    /// dialect for generated browse queries.
+    struct DatabaseEntry {
+        let displayName: String
+        let id: Int
+        let engine: String?
+    }
+
+    /// Databases sorted by display name. Names are usually unique; duplicates
+    /// get an " (id)" suffix so every node stays addressable.
+    private var databaseEntries: [DatabaseEntry] = []
     private var metadataByDatabaseID: [Int: CachedMetadata] = [:]
     /// Toolbar-selected target for native queries; driver-local, no SQL sent.
     private var activeDatabaseName: String?
@@ -186,11 +194,25 @@ public actor MetabaseDriver: DatabaseDriver {
     // MARK: - Query execution
 
     public func execute(_ query: DriverQuery, pageSize: Int) async throws -> QueryExecution {
-        guard case .sql(let sql) = query else {
+        switch query {
+        case .sql(let sql):
+            // Editor queries run against the toolbar-selected database.
+            return try await runNative(sql, databaseID: try targetDatabaseID(), pageSize: pageSize)
+        case .tableBrowse(let request):
+            // Browse routes to the table's own database and quotes for that
+            // database's engine — a Metabase connection spans many dialects.
+            let database = try database(named: request.path[0])
+            let sql = Self.browseSQL(request, engine: database.engine)
+            return try await runNative(sql, databaseID: database.id, pageSize: pageSize)
+        case .mongo:
             throw DBError(kind: .unsupported, message: "Metabase driver only accepts SQL")
         }
-        let databaseID = try targetDatabaseID()
+    }
 
+    /// Runs one native SQL statement against a specific Metabase database.
+    private func runNative(
+        _ sql: String, databaseID: Int, pageSize: Int
+    ) async throws -> QueryExecution {
         var request = try makeRequest(path: "/api/dataset", method: "POST")
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "database": databaseID,
@@ -247,17 +269,50 @@ public actor MetabaseDriver: DatabaseDriver {
     }
 
     private func targetDatabaseID() throws -> Int {
-        if let activeDatabaseName {
-            guard let entry = databaseEntries.first(where: { $0.displayName == activeDatabaseName })
-            else {
-                throw DBError(
-                    kind: .queryFailed,
-                    message: "Unknown database \"\(activeDatabaseName)\"")
-            }
-            return entry.id
-        }
+        if let activeDatabaseName { return try database(named: activeDatabaseName).id }
         if databaseEntries.count == 1 { return databaseEntries[0].id }
         throw DBError(kind: .queryFailed, message: "Select a database in the toolbar first.")
+    }
+
+    private func database(named name: String) throws -> DatabaseEntry {
+        guard let entry = databaseEntries.first(where: { $0.displayName == name }) else {
+            throw DBError(kind: .queryFailed, message: "Unknown database \"\(name)\"")
+        }
+        return entry
+    }
+
+    /// Builds a `SELECT` for browsing one table, quoted and paged for the
+    /// target engine's dialect. Metabase runs native SQL verbatim against the
+    /// backing engine, so MySQL needs backticks where Postgres needs quotes.
+    static func browseSQL(_ request: TableBrowseRequest, engine: String?) -> String {
+        let quote = identifierQuoting(for: engine)
+        // Drop the leading database component — it is a Metabase routing label,
+        // not a schema the engine resolves. What remains is [table] or
+        // [schema, table].
+        let tableRef = request.path.dropFirst().map(quote).joined(separator: ".")
+        let projection = request.columns.isEmpty
+            ? "*" : request.columns.map(quote).joined(separator: ", ")
+        var sql = "SELECT \(projection) FROM \(tableRef)"
+        if let filter = request.filter?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !filter.isEmpty {
+            sql += " WHERE \(filter)"
+        }
+        sql += " LIMIT \(request.limit) OFFSET \(request.offset)"
+        return sql
+    }
+
+    /// Returns an identifier-quoting function for a Metabase engine string.
+    /// MySQL/MariaDB use backticks; SQL Server uses brackets; everything else
+    /// falls back to standard double quotes.
+    private static func identifierQuoting(for engine: String?) -> (String) -> String {
+        switch engine {
+        case "mysql", "mariadb":
+            return { "`" + $0.replacingOccurrences(of: "`", with: "``") + "`" }
+        case "sqlserver":
+            return { "[" + $0.replacingOccurrences(of: "]", with: "]]") + "]" }
+        default:
+            return { "\"" + $0.replacingOccurrences(of: "\"", with: "\"\"") + "\"" }
+        }
     }
 
     // MARK: - Metadata fetching
@@ -274,7 +329,8 @@ public actor MetabaseDriver: DatabaseDriver {
                 let display = counts[database.name]! > 1
                     ? "\(database.name) (\(database.id))"
                     : database.name
-                return (displayName: display, id: database.id)
+                return DatabaseEntry(
+                    displayName: display, id: database.id, engine: database.engine)
             }
             .sorted { $0.displayName < $1.displayName }
     }
