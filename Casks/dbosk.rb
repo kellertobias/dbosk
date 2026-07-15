@@ -1,4 +1,4 @@
-# Homebrew cask for dbosk. This repo doubles as its own tap:
+# Homebrew cask for dbOSK. This repo doubles as its own tap:
 #
 #   brew tap kellertobias/dbosk https://github.com/kellertobias/dbosk
 #   brew install --cask kellertobias/dbosk/dbosk
@@ -11,14 +11,14 @@ cask "dbosk" do
   sha256 :no_check
 
   url "https://github.com/kellertobias/dbosk/archive/refs/heads/main.tar.gz"
-  name "Dbosk"
+  name "dbOSK"
   desc "Native database client for PostgreSQL, MySQL/MariaDB, MongoDB, and SQLite"
   homepage "https://github.com/kellertobias/dbosk"
 
   depends_on macos: :sonoma
 
-  app "dbosk-main/dist/Dbosk.app"
-  binary "#{appdir}/Dbosk.app/Contents/MacOS/Dbosk", target: "dbosk"
+  app "dbosk-main/dist/dbOSK.app"
+  binary "#{appdir}/dbOSK.app/Contents/MacOS/dbOSK", target: "dbosk"
 
   preflight do
     source = staged_path/"dbosk-main"
@@ -30,7 +30,7 @@ cask "dbosk" do
   zap trash: "~/Library/Preferences/dev.tobiaskeller.dbosk.plist"
 
   caveats <<~EOS
-    Dbosk was compiled locally from the main branch. Building requires
+    dbOSK was compiled locally from the main branch. Building requires
     Xcode 16+ and network access for SwiftPM dependencies.
 
     The build is ad-hoc signed and not notarized. The executable is compiled

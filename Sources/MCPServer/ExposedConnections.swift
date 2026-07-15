@@ -1,7 +1,7 @@
 import Connections
 import DBCore
 
-/// One active dbosk connection as seen by the MCP server. The `driver`
+/// One active dbOSK connection as seen by the MCP server. The `driver`
 /// closure hands out the session's *dedicated read-only* driver — never the
 /// UI session's primary connection.
 public struct ExposedConnection: Sendable {
@@ -41,7 +41,7 @@ public struct ExposedConnection: Sendable {
 /// Feeds the MCP server the current set of active connections. Includes
 /// sessions that are *not* opted in — tools filter on `access.enabled` so a
 /// call addressing a non-enabled connection gets an actionable "enable it in
-/// dbosk settings" error rather than a bare not-found.
+/// dbOSK settings" error rather than a bare not-found.
 public protocol MCPConnectionProvider: Sendable {
     func connections() async -> [ExposedConnection]
 }

@@ -1,6 +1,6 @@
-<p align="center"><img src="Resources/AppIcon_1024.png" width="128" alt="dbosk icon"></p>
+<p align="center"><img src="Resources/AppIcon_1024.png" width="128" alt="dbOSK icon"></p>
 
-# dbosk
+# dbOSK
 
 A native macOS database client (SwiftUI + AppKit) for PostgreSQL, MySQL/MariaDB,
 MongoDB, and SQLite. Streaming results, cancellable queries, CSV/JSON export,
@@ -19,7 +19,7 @@ loading (1Password CLI, AWS, …).
 
 This repository is its own Homebrew tap. There is no prebuilt download or
 GitHub Release: the cask downloads the `main` branch source archive and
-compiles the app on your machine during install, then places `Dbosk.app`
+compiles the app on your machine during install, then places `dbOSK.app`
 in `/Applications` automatically. You need Xcode 16+ and macOS 14 (Sonoma)
 or newer.
 
@@ -32,7 +32,7 @@ brew tap kellertobias/dbosk https://github.com/kellertobias/dbosk
 #    the whole tap):
 brew trust --cask kellertobias/dbosk/dbosk
 
-# 3. Install: builds from source, then installs Dbosk.app to /Applications.
+# 3. Install: builds from source, then installs dbOSK.app to /Applications.
 #    The fully-qualified name scopes the install to exactly this tap — it
 #    can never resolve to a same-named package from another tap:
 brew install --cask kellertobias/dbosk/dbosk
@@ -71,7 +71,7 @@ requires a paid Apple Developer ID certificate plus notarization by Apple —
 
 ```sh
 swift build
-swift run Dbosk        # or .build/debug/Dbosk
+swift run dbOSK        # or .build/debug/dbOSK
 ```
 
 ## Tests
@@ -88,8 +88,8 @@ DBOSK_PG_TESTS=1 DBOSK_MYSQL_TESTS=1 DBOSK_MONGO_TESTS=1 swift test
 ## App bundle & distribution
 
 ```sh
-Scripts/make-app.sh            # dist/Dbosk.app (ad-hoc signed, local use)
-Scripts/make-app.sh --dmg      # + dist/Dbosk.dmg
+Scripts/make-app.sh            # dist/dbOSK.app (ad-hoc signed, local use)
+Scripts/make-app.sh --dmg      # + dist/dbOSK.dmg
 ```
 
 For notarized distribution, sign with a Developer ID and submit the DMG:
@@ -97,8 +97,8 @@ For notarized distribution, sign with a Developer ID and submit the DMG:
 ```sh
 export DBOSK_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
 Scripts/make-app.sh --dmg
-xcrun notarytool submit dist/Dbosk.dmg --keychain-profile <profile> --wait
-xcrun stapler staple dist/Dbosk.dmg
+xcrun notarytool submit dist/dbOSK.dmg --keychain-profile <profile> --wait
+xcrun stapler staple dist/dbOSK.dmg
 ```
 
 The app is intentionally **not sandboxed**: the script-based credential loader

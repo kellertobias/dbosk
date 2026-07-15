@@ -99,7 +99,7 @@ struct MCPToolbox: Sendable {
         guard match.access.enabled else {
             throw ToolError(
                 "Connection '\(match.name)' is not enabled for MCP. Enable it in "
-                + "dbosk → Settings → MCP → Connections, then retry.")
+                + "dbOSK → Settings → MCP → Connections, then retry.")
         }
         return match
     }
@@ -127,7 +127,7 @@ struct MCPToolbox: Sendable {
             throw ToolError(
                 "Table '\(path.joined(separator: "."))' is not in the MCP allowlist "
                 + "for connection '\(connection.name)'. Adjust the allowlist in "
-                + "dbosk → Settings → MCP → Connections.")
+                + "dbOSK → Settings → MCP → Connections.")
         }
     }
 
@@ -180,7 +180,7 @@ struct MCPToolbox: Sendable {
         if payload.isEmpty {
             return jsonText([
                 "connections": [] as [Any],
-                "hint": "No connections are enabled for MCP. In dbosk, connect to a "
+                "hint": "No connections are enabled for MCP. In dbOSK, connect to a "
                     + "database and enable it under Settings → MCP → Connections.",
             ])
         }
@@ -382,7 +382,7 @@ struct MCPToolbox: Sendable {
             name: "list_connections",
             description: """
                 Lists the database connections currently available over MCP \
-                (active dbosk connections the user has enabled for MCP). \
+                (active dbOSK connections the user has enabled for MCP). \
                 Returns connection_id values used by every other tool.
                 """,
             inputSchema: .object([

@@ -8,7 +8,7 @@ let package = Package(
         .library(name: "DBCore", targets: ["DBCore"]),
         .library(name: "DBDriverPostgres", targets: ["DBDriverPostgres"]),
         .library(name: "Connections", targets: ["Connections"]),
-        .executable(name: "Dbosk", targets: ["Dbosk"]),
+        .executable(name: "dbOSK", targets: ["Dbosk"]),
     ],
     dependencies: [
         .package(url: "https://github.com/vapor/postgres-nio.git", from: "1.21.0"),

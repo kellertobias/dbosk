@@ -1,8 +1,8 @@
 #!/bin/bash
 # Usage:
 #   ./build                  debug build
-#   ./build archive          release build + dist/Dbosk.app (via Scripts/make-app.sh)
-#   ./build archive install  release build, then install Dbosk.app to ~/Applications
+#   ./build archive          release build + dist/dbOSK.app (via Scripts/make-app.sh)
+#   ./build archive install  release build, then install dbOSK.app to ~/Applications
 #   ./build open             debug build, kill running instances, launch a fresh one
 #
 # Bundle assembly (Info.plist, icon, codesign) lives in Scripts/make-app.sh —
@@ -11,7 +11,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APP_NAME="Dbosk"
+APP_NAME="dbOSK"
 INSTALL_DIR="$HOME/Applications"
 
 mode="${1:-debug}"
