@@ -56,14 +56,16 @@ brew untap kellertobias/dbosk
 ### Signing and Gatekeeper
 
 The build is compiled locally and ad-hoc signed (`codesign --sign -`), not
-notarized. Because the source arrives as a downloaded archive and Homebrew
-applies the quarantine attribute to cask-installed apps, Gatekeeper assesses
-the app on first launch and may block it. Approve it once via right-click →
-Open, or System Settings → Privacy & Security → "Open Anyway"; subsequent
-launches are unaffected. Distribution without that prompt would require
-signing with a paid Apple Developer ID certificate plus notarization by
-Apple — `Scripts/make-app.sh` supports that via `DBOSK_SIGN_IDENTITY`
-(see below).
+notarized. Gatekeeper only assesses apps whose bundle or executable carries
+the quarantine attribute, and the executable here is produced by the local
+compiler, so the app normally launches without any prompt — no workarounds
+needed. Files staged from the downloaded source archive can carry the
+attribute, though, so if a macOS update ever blocks the first launch,
+approve it once via right-click → Open, or System Settings → Privacy &
+Security → "Open Anyway". Distributing prebuilt binaries to other machines
+is different: those downloads are quarantined, and passing Gatekeeper then
+requires a paid Apple Developer ID certificate plus notarization by Apple —
+`Scripts/make-app.sh` supports that via `DBOSK_SIGN_IDENTITY` (see below).
 
 ## Build & run (development)
 

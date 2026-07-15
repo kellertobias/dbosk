@@ -33,9 +33,10 @@ cask "dbosk" do
     Dbosk was compiled locally from the main branch. Building requires
     Xcode 16+ and network access for SwiftPM dependencies.
 
-    The build is ad-hoc signed and not notarized, and Homebrew applies the
-    quarantine attribute to cask-installed apps, so macOS may block the
-    first launch. Approve it once via right-click -> Open, or under
+    The build is ad-hoc signed and not notarized. The executable is compiled
+    locally and carries no quarantine attribute, so the app normally launches
+    without a Gatekeeper prompt. Should macOS block the first launch anyway,
+    approve it once via right-click -> Open, or under
     System Settings -> Privacy & Security -> "Open Anyway".
 
     `brew upgrade` cannot detect new commits (version :latest); update with:
