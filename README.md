@@ -46,6 +46,19 @@ commits — reinstalling is the update path):
 brew reinstall --cask kellertobias/dbosk/dbosk
 ```
 
+Because the cask pins no version and checks no checksum (`version :latest`,
+`sha256 :no_check`), Homebrew reuses the source archive it cached on the
+first install and never re-downloads it — so a plain `reinstall` can quietly
+recompile stale code. To actually pick up new commits, delete the cached
+tarball first so the current `main` branch is fetched:
+
+```sh
+rm -f "$(brew --cache --cask kellertobias/dbosk/dbosk)"
+brew reinstall --cask kellertobias/dbosk/dbosk
+```
+
+Then quit and reopen the app (a running instance is still the old build).
+
 Uninstall and remove the tap:
 
 ```sh
