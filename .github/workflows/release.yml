@@ -6,12 +6,13 @@ name: Release
 # the app attached.
 #
 # dbOSK is an AppKit/SwiftUI app: it can only be compiled against the macOS SDK, so the
-# `build` job must run on a macOS runner (GitHub-hosted `macos-14`, a managed VM — no
-# self-hosted macOS runner needed). The build targets Apple Silicon (arm64) only: a
-# universal build needs `swift build --arch arm64 --arch x86_64`, which routes through
-# the Xcode build system and fails on this dependency graph under the CI Xcode. It is
-# ad-hoc signed only (no Apple Developer account), so the binary is not notarized. The
-# `publish` job runs on Linux.
+# `build` job must run on a macOS runner (GitHub-hosted `macos-26`, a managed VM — no
+# self-hosted macOS runner needed). It needs macos-26 specifically: a pinned dependency
+# (the MCP swift-sdk) uses Swift 6.2 APIs, so an older Xcode fails to compile it. The
+# build targets Apple Silicon (arm64) only: a universal build needs `swift build --arch
+# arm64 --arch x86_64`, which routes through the Xcode build system and fails on this
+# dependency graph. It is ad-hoc signed only (no Apple Developer account), so the binary
+# is not notarized. The `publish` job runs on Linux.
 
 on:
   push:
@@ -34,21 +35,14 @@ concurrency:
 jobs:
   build:
     name: Build macOS app (Apple Silicon)
-    # macos-14 is a GitHub-hosted Apple Silicon (arm64) runner.
-    runs-on: macos-14
+    # macos-26 is a GitHub-hosted Apple Silicon (arm64) runner. Its default Xcode is 26.x
+    # (Swift 6.2+), required to compile the pinned MCP swift-sdk dependency.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
           fetch-depth: 0
-
-      # The package requires Swift 6 tools (Package.swift: swift-tools-version 6.0), but the
-      # runner's default Xcode ships Swift 5.10. Select the newest stable Xcode installed on
-      # the runner (16.x → Swift 6); this also exports DEVELOPER_DIR for the build steps.
-      - name: Select Xcode with Swift 6
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: latest-stable
 
       - name: Swift toolchain
         run: swift --version
